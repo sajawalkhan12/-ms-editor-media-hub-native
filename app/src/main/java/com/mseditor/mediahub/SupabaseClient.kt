@@ -33,7 +33,16 @@ object SupabaseClient {
 
             val result = runCatching {
 
-                val baseUrl = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                val baseUrl = SupabaseConfig.SUPABASE_URL.trim().trimEnd('/')
+                val apiKey = SupabaseConfig.SUPABASE_KEY.trim()
+
+                require(baseUrl.startsWith("https://")) {
+                    "Supabase URL sahi nahi hai."
+                }
+
+                require(apiKey.isNotBlank()) {
+                    "Supabase publishable key khali hai."
+                }
 
                 val endpoint =
                     "$baseUrl/rest/v1/media_items?select=*&order=created_at.desc"
@@ -43,20 +52,19 @@ object SupabaseClient {
 
                 try {
                     connection.requestMethod = "GET"
-                    connection.connectTimeout = 20000
-                    connection.readTimeout = 20000
+                    connection.connectTimeout = 30000
+                    connection.readTimeout = 30000
                     connection.useCaches = false
 
+                    connection.setRequestProperty("apikey", apiKey)
                     connection.setRequestProperty(
-                        "apikey",
-                        SupabaseConfig.SUPABASE_KEY.trim()
+                        "Authorization",
+                        "Bearer $apiKey"
                     )
-
                     connection.setRequestProperty(
                         "Accept",
                         "application/json"
                     )
-
                     connection.setRequestProperty(
                         "Accept-Profile",
                         "public"
@@ -106,15 +114,15 @@ object SupabaseClient {
 
             items.add(
                 MediaItem(
-                    id = item.optString("id"),
-                    title = item.optString("title"),
-                    description = item.optString("description"),
-                    mediaType = item.optString("media_type"),
-                    storagePath = item.optString("storage_path"),
-                    externalUrl = item.optString("external_url"),
-                    posterPath = item.optString("poster_path"),
-                    createdBy = item.optString("created_by"),
-                    createdAt = item.optString("created_at")
+                    id = item.optString("id", ""),
+                    title = item.optString("title", ""),
+                    description = item.optString("description", ""),
+                    mediaType = item.optString("media_type", ""),
+                    storagePath = item.optString("storage_path", ""),
+                    externalUrl = item.optString("external_url", ""),
+                    posterPath = item.optString("poster_path", ""),
+                    createdBy = item.optString("created_by", ""),
+                    createdAt = item.optString("created_at", "")
                 )
             )
         }
@@ -124,11 +132,23 @@ object SupabaseClient {
 
     fun getPublicMediaUrl(path: String): String {
 
-        if (path.isBlank()) return ""
+        val cleanPath = path.trim()
 
-        val encodedPath = path.split("/")
-            .joinToString("/") {
-                URLEncoder.encode(it, "UTF-8")
+        if (cleanPath.isBlank()) return ""
+
+        // Already a complete URL: do not build it again.
+        if (
+            cleanPath.startsWith("https://", true) ||
+            cleanPath.startsWith("http://", true)
+        ) {
+            return cleanPath
+        }
+
+        val encodedPath = cleanPath
+            .removePrefix("/")
+            .split("/")
+            .joinToString("/") { part ->
+                URLEncoder.encode(part, "UTF-8")
                     .replace("+", "%20")
             }
 

@@ -86,8 +86,13 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
 
-        brand.addView(text("MS EDITOR MEDIA HUB", 19f, emerald, true))
-        brand.addView(text("Video Songs • Tutorials • Prompts", 12f, gold))
+        brand.addView(
+            text("MS EDITOR MEDIA HUB", 19f, emerald, true)
+        )
+
+        brand.addView(
+            text("Video Songs • Tutorials • Prompts", 12f, gold)
+        )
 
         header.addView(brand)
 
@@ -154,24 +159,34 @@ class MainActivity : Activity() {
 
         root.addView(searchRow)
 
-        val scroll = ScrollView(this)
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(black)
+        }
 
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(4), dp(14), dp(18))
         }
 
-        scroll.addView(content)
-
-        root.addView(
-            scroll,
-            LinearLayout.LayoutParams(0, 0, 1f)
+        scroll.addView(
+            content,
+            ScrollView.LayoutParams(-1, -2)
         )
 
-        content.addView(text("Latest Posts", 21f, gold, true))
+        // IMPORTANT: ScrollView width is now MATCH_PARENT (-1)
+        root.addView(
+            scroll,
+            LinearLayout.LayoutParams(-1, 0, 1f)
+        )
+
+        content.addView(
+            text("Latest Posts", 21f, gold, true)
+        )
 
         postsContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
         }
 
         content.addView(postsContainer)
@@ -251,7 +266,9 @@ class MainActivity : Activity() {
             tag = category
         }
 
-        section.addView(text(category, 19f, emerald, true))
+        section.addView(
+            text(category, 19f, emerald, true)
+        )
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -261,13 +278,16 @@ class MainActivity : Activity() {
         }
 
         card.addView(text("♫", 35f, gold, true))
-        card.addView(text("Open category to view posts", 14f, white))
+        card.addView(
+            text("Open category to view posts", 14f, white)
+        )
 
         section.addView(card)
 
         val viewButton = text("View  →", 14f, gold, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(12), dp(10), dp(5))
+
             setOnClickListener {
                 showCategory(category)
             }
@@ -281,12 +301,14 @@ class MainActivity : Activity() {
 
         val params = LinearLayout.LayoutParams(-1, -2)
         params.setMargins(0, 0, 0, dp(13))
+
         content.addView(section, params)
     }
 
     private fun filterCategories(query: String) {
 
         for (i in 0 until content.childCount) {
+
             val item = content.getChildAt(i)
             val category = item.tag?.toString() ?: ""
 
@@ -310,6 +332,7 @@ class MainActivity : Activity() {
         refreshButton.text = "Loading..."
 
         postsContainer.removeAllViews()
+
         postsContainer.addView(
             text("Loading posts...", 14f, Color.LTGRAY)
         )
@@ -356,6 +379,7 @@ class MainActivity : Activity() {
     private fun filterMediaItems(query: String) {
 
         val filtered = allMediaItems.filter { item ->
+
             item.title.contains(query, true) ||
             item.description.contains(query, true) ||
             item.mediaType.contains(query, true)
@@ -369,6 +393,7 @@ class MainActivity : Activity() {
         postsContainer.removeAllViews()
 
         if (items.isEmpty()) {
+
             postsContainer.addView(
                 text(
                     "Abhi koi post available nahi hai.",
@@ -376,6 +401,7 @@ class MainActivity : Activity() {
                     white
                 )
             )
+
             return
         }
 
@@ -397,17 +423,27 @@ class MainActivity : Activity() {
             )
 
             card.addView(
-                text("Type: ${item.mediaType}", 12f, emerald)
+                text(
+                    "Type: ${item.mediaType}",
+                    12f,
+                    emerald
+                )
             )
 
             if (item.description.isNotBlank()) {
+
                 card.addView(
-                    text(item.description, 13f, white)
+                    text(
+                        item.description,
+                        13f,
+                        white
+                    )
                 )
             }
 
             val params = LinearLayout.LayoutParams(-1, -2)
             params.setMargins(0, 0, 0, dp(12))
+
             postsContainer.addView(card, params)
         }
     }
@@ -444,12 +480,14 @@ class MainActivity : Activity() {
         val back = text("← Back to Home", 17f, emerald, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(20), dp(25), dp(20), dp(25))
+
             setOnClickListener {
                 showHome()
             }
         }
 
         page.addView(back)
+
         setContentView(page)
     }
 

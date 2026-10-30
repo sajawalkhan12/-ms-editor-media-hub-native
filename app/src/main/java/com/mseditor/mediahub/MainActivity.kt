@@ -24,6 +24,7 @@ class MainActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var search: EditText
     private lateinit var postsContainer: LinearLayout
+    private lateinit var refreshButton: Button
 
     private var allMediaItems = listOf<MediaItem>()
 
@@ -48,9 +49,7 @@ class MainActivity : Activity() {
         return GradientDrawable().apply {
             setColor(color)
             cornerRadius = dp(14).toFloat()
-            if (stroke != 0) {
-                setStroke(dp(1), stroke)
-            }
+            if (stroke != 0) setStroke(dp(1), stroke)
         }
     }
 
@@ -87,13 +86,8 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
 
-        brand.addView(
-            text("MS EDITOR MEDIA HUB", 19f, emerald, true)
-        )
-
-        brand.addView(
-            text("Video Songs • Tutorials • Prompts", 12f, gold)
-        )
+        brand.addView(text("MS EDITOR MEDIA HUB", 19f, emerald, true))
+        brand.addView(text("Video Songs • Tutorials • Prompts", 12f, gold))
 
         header.addView(brand)
 
@@ -129,19 +123,34 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(0, dp(46), 1f)
         )
 
-        val refresh = text("Refresh", 13f, white, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+        refreshButton = Button(this).apply {
+            text = "Refresh"
+            textSize = 13f
+            isAllCaps = false
+            setTextColor(white)
             background = rounded(panel, emerald)
+            isClickable = true
+            isFocusable = true
+            minHeight = 0
+            minimumHeight = 0
+            minWidth = 0
+            minimumWidth = 0
+            setPadding(dp(10), 0, dp(10), 0)
 
             setOnClickListener {
+                Toast.makeText(
+                    this@MainActivity,
+                    "Refresh started",
+                    Toast.LENGTH_SHORT
+                ).show()
+
                 loadMediaItems()
             }
         }
 
         val refreshParams = LinearLayout.LayoutParams(-2, dp(46))
         refreshParams.setMargins(dp(8), 0, 0, 0)
-        searchRow.addView(refresh, refreshParams)
+        searchRow.addView(refreshButton, refreshParams)
 
         root.addView(searchRow)
 
@@ -159,9 +168,7 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(0, 0, 1f)
         )
 
-        content.addView(
-            text("Latest Posts", 21f, gold, true)
-        )
+        content.addView(text("Latest Posts", 21f, gold, true))
 
         postsContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -176,17 +183,11 @@ class MainActivity : Activity() {
         search.addTextChangedListener(object : TextWatcher {
 
             override fun beforeTextChanged(
-                s: CharSequence?,
-                start: Int,
-                count: Int,
-                after: Int
+                s: CharSequence?, start: Int, count: Int, after: Int
             ) {}
 
             override fun onTextChanged(
-                s: CharSequence?,
-                start: Int,
-                before: Int,
-                count: Int
+                s: CharSequence?, start: Int, before: Int, count: Int
             ) {
                 val query = s?.toString() ?: ""
                 filterCategories(query)
@@ -250,8 +251,7 @@ class MainActivity : Activity() {
             tag = category
         }
 
-        val heading = text(category, 19f, emerald, true)
-        section.addView(heading)
+        section.addView(text(category, 19f, emerald, true))
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -268,7 +268,6 @@ class MainActivity : Activity() {
         val viewButton = text("View  →", 14f, gold, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(12), dp(10), dp(5))
-
             setOnClickListener {
                 showCategory(category)
             }
@@ -282,14 +281,12 @@ class MainActivity : Activity() {
 
         val params = LinearLayout.LayoutParams(-1, -2)
         params.setMargins(0, 0, 0, dp(13))
-
         content.addView(section, params)
     }
 
     private fun filterCategories(query: String) {
 
         for (i in 0 until content.childCount) {
-
             val item = content.getChildAt(i)
             val category = item.tag?.toString() ?: ""
 
@@ -306,20 +303,33 @@ class MainActivity : Activity() {
 
     private fun loadMediaItems() {
 
-        postsContainer.removeAllViews()
+        if (!::refreshButton.isInitialized ||
+            !::postsContainer.isInitialized) return
 
+        refreshButton.isEnabled = false
+        refreshButton.text = "Loading..."
+
+        postsContainer.removeAllViews()
         postsContainer.addView(
             text("Loading posts...", 14f, Color.LTGRAY)
         )
 
         SupabaseClient.getMediaItems { result ->
 
+            refreshButton.isEnabled = true
+            refreshButton.text = "Refresh"
+
             result.onSuccess { items ->
 
                 allMediaItems = items
 
-                val query = search.text.toString()
-                filterMediaItems(query)
+                Toast.makeText(
+                    this,
+                    "Refresh complete: ${items.size} posts",
+                    Toast.LENGTH_SHORT
+                ).show()
+
+                filterMediaItems(search.text.toString())
             }
 
             result.onFailure { error ->
@@ -328,11 +338,17 @@ class MainActivity : Activity() {
 
                 postsContainer.addView(
                     text(
-                        "Posts load nahi huin: ${error.message}",
+                        "Posts load nahi huin:\n${error.message}",
                         13f,
                         Color.RED
                     )
                 )
+
+                Toast.makeText(
+                    this,
+                    "Refresh failed: ${error.message}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
@@ -340,7 +356,6 @@ class MainActivity : Activity() {
     private fun filterMediaItems(query: String) {
 
         val filtered = allMediaItems.filter { item ->
-
             item.title.contains(query, true) ||
             item.description.contains(query, true) ||
             item.mediaType.contains(query, true)
@@ -354,7 +369,6 @@ class MainActivity : Activity() {
         postsContainer.removeAllViews()
 
         if (items.isEmpty()) {
-
             postsContainer.addView(
                 text(
                     "Abhi koi post available nahi hai.",
@@ -362,7 +376,6 @@ class MainActivity : Activity() {
                     white
                 )
             )
-
             return
         }
 
@@ -384,27 +397,17 @@ class MainActivity : Activity() {
             )
 
             card.addView(
-                text(
-                    "Type: ${item.mediaType}",
-                    12f,
-                    emerald
-                )
+                text("Type: ${item.mediaType}", 12f, emerald)
             )
 
             if (item.description.isNotBlank()) {
-
                 card.addView(
-                    text(
-                        item.description,
-                        13f,
-                        white
-                    )
+                    text(item.description, 13f, white)
                 )
             }
 
             val params = LinearLayout.LayoutParams(-1, -2)
             params.setMargins(0, 0, 0, dp(12))
-
             postsContainer.addView(card, params)
         }
     }
@@ -447,7 +450,6 @@ class MainActivity : Activity() {
         }
 
         page.addView(back)
-
         setContentView(page)
     }
 

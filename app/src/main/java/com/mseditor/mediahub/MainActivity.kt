@@ -9,22 +9,17 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.media.MediaPlayer
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.*
 import android.text.TextWatcher
 import android.text.Editable
-import androidx.media3.common.MediaItem as ExoMediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
@@ -44,10 +39,8 @@ class MainActivity : Activity() {
     private lateinit var refreshButton: Button
 
     private var allMediaItems = listOf<MediaItem>()
-    private var audioPlayer: MediaPlayer? = null
-    private var currentAudioButton: Button? = null
+    private val mediaWebViews = mutableListOf<WebView>()
 
-    private val videoPlayers = mutableListOf<ExoPlayer>()
     private val imageExecutor = Executors.newFixedThreadPool(3)
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -92,18 +85,20 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun releaseVideos() {
-        videoPlayers.forEach { player ->
+    private fun releaseMediaPlayers() {
+        mediaWebViews.forEach { webView ->
             try {
-                player.release()
+                webView.stopLoading()
+                webView.loadUrl("about:blank")
+                webView.destroy()
             } catch (_: Exception) {
             }
         }
-        videoPlayers.clear()
+        mediaWebViews.clear()
     }
 
     private fun showHome() {
-        releaseVideos()
+        releaseMediaPlayers()
         selectedCategory = "Home"
 
         root = LinearLayout(this).apply {
@@ -488,13 +483,11 @@ class MainActivity : Activity() {
             }
 
             when (mediaKind(item)) {
-                "audio" -> addAudioPlayer(card, url)
-                "video" -> addVideoPlayer(card, url)
+                "audio" -> addHtmlMediaPlayer(card, url, false)
+                "video" -> addHtmlMediaPlayer(card, url, true)
                 "image" -> addImage(card, url, 16f / 9f)
                 else -> {
-                    if (url.isNotBlank()) {
-                        addImage(card, url, 16f / 9f)
-                    }
+                    if (url.isNotBlank()) addImage(card, url, 16f / 9f)
                 }
             }
 
@@ -508,9 +501,7 @@ class MainActivity : Activity() {
                     isAllCaps = false
                     setTextColor(white)
                     background = rounded(black, gold)
-                    setOnClickListener {
-                        showPromptDialog(item)
-                    }
+                    setOnClickListener { showPromptDialog(item) }
                 }
                 card.addView(promptButton)
             }
@@ -535,7 +526,6 @@ class MainActivity : Activity() {
             ) {
                 val width = MeasureSpec.getSize(widthMeasureSpec)
                 val height = (width / ratio).toInt()
-
                 super.onMeasure(
                     widthMeasureSpec,
                     MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
@@ -566,9 +556,7 @@ class MainActivity : Activity() {
                 connection.instanceFollowRedirects = true
 
                 val code = connection.responseCode
-                if (code !in 200..299) {
-                    throw Exception("Image HTTP $code")
-                }
+                if (code !in 200..299) throw Exception("Image HTTP $code")
 
                 val bitmap = connection.inputStream.use {
                     BitmapFactory.decodeStream(it)
@@ -592,156 +580,119 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun addAudioPlayer(card: LinearLayout, url: String) {
-        if (url.isBlank()) {
-            card.addView(text("Audio file URL nahi mili.", 13f, Color.RED))
-            return
-        }
-
-        val playButton = Button(this).apply {
-            text = "▶ Play Song"
-            isAllCaps = false
-            setTextColor(white)
-            background = rounded(black, emerald)
-        }
-
-        card.addView(playButton)
-
-        playButton.setOnClickListener {
-            if (audioPlayer?.isPlaying == true &&
-                currentAudioButton === playButton
-            ) {
-                audioPlayer?.pause()
-                playButton.text = "▶ Resume Song"
-                return@setOnClickListener
-            }
-
-            releaseAudio()
-            playButton.isEnabled = false
-            playButton.text = "Loading audio..."
-
-            try {
-                val player = MediaPlayer()
-                audioPlayer = player
-                currentAudioButton = playButton
-
-                player.setDataSource(url)
-
-                player.setOnPreparedListener {
-                    if (isFinishing || isDestroyed) {
-                        it.release()
-                        return@setOnPreparedListener
-                    }
-
-                    playButton.isEnabled = true
-                    playButton.text = "Ⅱ Pause Song"
-                    it.start()
-                }
-
-                player.setOnCompletionListener {
-                    playButton.text = "▶ Play Song"
-                    releaseAudio()
-                }
-
-                player.setOnErrorListener { _, _, _ ->
-                    playButton.isEnabled = true
-                    playButton.text = "▶ Play Song"
-                    releaseAudio()
-
-                    Toast.makeText(
-                        this,
-                        "Audio play nahi ho saka.",
-                        Toast.LENGTH_LONG
-                    ).show()
-
-                    true
-                }
-
-                player.prepareAsync()
-            } catch (e: Exception) {
-                playButton.isEnabled = true
-                playButton.text = "▶ Play Song"
-                releaseAudio()
-
-                Toast.makeText(
-                    this,
-                    "Audio error: ${e.message}",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
+    private fun escapeHtml(value: String): String {
+        return value
+            .replace("&", "&amp;")
+            .replace("\"", "&quot;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
     }
 
-    private fun releaseAudio() {
-        try {
-            audioPlayer?.release()
-        } catch (_: Exception) {
-        }
-
-        audioPlayer = null
-        currentAudioButton = null
-    }
-
-    // Media3 ExoPlayer video playback
-    private fun addVideoPlayer(card: LinearLayout, url: String) {
+    // Website-style HTML5 audio and video player
+    private fun addHtmlMediaPlayer(
+        card: LinearLayout,
+        url: String,
+        isVideo: Boolean
+    ) {
         if (url.isBlank()) {
-            card.addView(text("Video file URL nahi mili.", 13f, Color.RED))
-            return
-        }
-
-        val playerView = PlayerView(this).apply {
-            useController = true
-            setBackgroundColor(Color.BLACK)
-            layoutParams = FrameLayout.LayoutParams(-1, -1)
-        }
-
-        val frame = object : FrameLayout(this) {
-            override fun onMeasure(
-                widthMeasureSpec: Int,
-                heightMeasureSpec: Int
-            ) {
-                val width = MeasureSpec.getSize(widthMeasureSpec)
-                val height = (width * 9f / 16f).toInt()
-
-                super.onMeasure(
-                    widthMeasureSpec,
-                    MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
-                )
-            }
-        }
-
-        frame.layoutParams = LinearLayout.LayoutParams(-1, -2)
-        frame.addView(playerView)
-        card.addView(frame)
-
-        try {
-            val player = ExoPlayer.Builder(this).build()
-            videoPlayers.add(player)
-
-            playerView.player = player
-
-            player.addListener(object : Player.Listener {
-                override fun onPlayerError(error: PlaybackException) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Video error: ${error.errorCodeName}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            })
-
-            player.setMediaItem(
-                ExoMediaItem.fromUri(Uri.parse(url))
-            )
-
-            player.prepare()
-            player.playWhenReady = false
-
-        } catch (e: Exception) {
             card.addView(
-                text("Video error: ${e.message}", 12f, Color.RED)
+                text(
+                    if (isVideo) "Video file URL nahi mili."
+                    else "Audio file URL nahi mili.",
+                    13f,
+                    Color.RED
+                )
             )
+            return
         }
+
+        val webView = WebView(this)
+        mediaWebViews.add(webView)
+
+        webView.setBackgroundColor(Color.BLACK)
+        webView.settings.javaScriptEnabled = false
+        webView.settings.domStorageEnabled = false
+        webView.settings.mediaPlaybackRequiresUserGesture = true
+        webView.webChromeClient = WebChromeClient()
+        webView.webViewClient = WebViewClient()
+
+        val playerHeight = if (isVideo) dp(220) else dp(85)
+
+        webView.layoutParams = LinearLayout.LayoutParams(-1, playerHeight)
+
+        val safeUrl = escapeHtml(url)
+
+        val playerHtml = if (isVideo) {
+            """
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                html, body {
+                    margin: 0;
+                    padding: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: #000;
+                    overflow: hidden;
+                }
+                video {
+                    width: 100%;
+                    height: 100%;
+                    background: #000;
+                    object-fit: contain;
+                }
+            </style>
+            </head>
+            <body>
+                <video controls playsinline preload="metadata">
+                    <source src="$safeUrl">
+                    Your browser does not support HTML5 video.
+                </video>
+            </body>
+            </html>
+            """.trimIndent()
+        } else {
+            """
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                html, body {
+                    margin: 0;
+                    padding: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: #091d25;
+                    display: flex;
+                    align-items: center;
+                }
+                audio {
+                    width: 100%;
+                }
+            </style>
+            </head>
+            <body>
+                <audio controls preload="metadata">
+                    <source src="$safeUrl">
+                    Your browser does not support HTML5 audio.
+                </audio>
+            </body>
+            </html>
+            """.trimIndent()
+        }
+
+        card.addView(webView)
+
+        webView.loadDataWithBaseURL(
+            url,
+            playerHtml,
+            "text/html",
+            "UTF-8",
+            null
+        )
     }
 
     private fun showPromptDialog(item: MediaItem) {
@@ -774,7 +725,7 @@ class MainActivity : Activity() {
     }
 
     private fun showCategory(name: String) {
-        releaseVideos()
+        releaseMediaPlayers()
         selectedCategory = name
 
         val page = LinearLayout(this).apply {
@@ -843,8 +794,8 @@ class MainActivity : Activity() {
                 )
 
                 when (mediaKind(item)) {
-                    "video" -> addVideoPlayer(card, url)
-                    "audio" -> addAudioPlayer(card, url)
+                    "video" -> addHtmlMediaPlayer(card, url, true)
+                    "audio" -> addHtmlMediaPlayer(card, url, false)
                     "image" -> addImage(card, url, 16f / 9f)
                     else -> card.addView(
                         text(item.description, 13f, white)
@@ -860,9 +811,7 @@ class MainActivity : Activity() {
                         Button(this).apply {
                             text = "View / Copy Prompt"
                             isAllCaps = false
-                            setOnClickListener {
-                                showPromptDialog(item)
-                            }
+                            setOnClickListener { showPromptDialog(item) }
                         }
                     )
                 }
@@ -886,8 +835,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        releaseAudio()
-        releaseVideos()
+        releaseMediaPlayers()
         imageExecutor.shutdownNow()
         super.onDestroy()
     }

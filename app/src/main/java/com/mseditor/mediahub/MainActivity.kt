@@ -45,7 +45,10 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
 
-    private fun rounded(color: Int, stroke: Int = 0): GradientDrawable {
+    private fun rounded(
+        color: Int,
+        stroke: Int = 0
+    ): GradientDrawable {
         return GradientDrawable().apply {
             setColor(color)
             cornerRadius = dp(14).toFloat()
@@ -153,7 +156,9 @@ class MainActivity : Activity() {
             }
         }
 
-        val refreshParams = LinearLayout.LayoutParams(-2, dp(46))
+        val refreshParams =
+            LinearLayout.LayoutParams(-2, dp(46))
+
         refreshParams.setMargins(dp(8), 0, 0, 0)
         searchRow.addView(refreshButton, refreshParams)
 
@@ -169,12 +174,9 @@ class MainActivity : Activity() {
             setPadding(dp(14), dp(4), dp(14), dp(18))
         }
 
-        scroll.addView(
-            content,
-            ScrollView.LayoutParams(-1, -2)
-        )
+        // Corrected: ScrollView automatically creates suitable LayoutParams.
+        scroll.addView(content)
 
-        // IMPORTANT: ScrollView width is now MATCH_PARENT (-1)
         root.addView(
             scroll,
             LinearLayout.LayoutParams(-1, 0, 1f)
@@ -198,11 +200,17 @@ class MainActivity : Activity() {
         search.addTextChangedListener(object : TextWatcher {
 
             override fun beforeTextChanged(
-                s: CharSequence?, start: Int, count: Int, after: Int
+                s: CharSequence?,
+                start: Int,
+                count: Int,
+                after: Int
             ) {}
 
             override fun onTextChanged(
-                s: CharSequence?, start: Int, before: Int, count: Int
+                s: CharSequence?,
+                start: Int,
+                before: Int,
+                count: Int
             ) {
                 val query = s?.toString() ?: ""
                 filterCategories(query)
@@ -278,6 +286,7 @@ class MainActivity : Activity() {
         }
 
         card.addView(text("♫", 35f, gold, true))
+
         card.addView(
             text("Open category to view posts", 14f, white)
         )
@@ -301,7 +310,6 @@ class MainActivity : Activity() {
 
         val params = LinearLayout.LayoutParams(-1, -2)
         params.setMargins(0, 0, 0, dp(13))
-
         content.addView(section, params)
     }
 
@@ -326,7 +334,8 @@ class MainActivity : Activity() {
     private fun loadMediaItems() {
 
         if (!::refreshButton.isInitialized ||
-            !::postsContainer.isInitialized) return
+            !::postsContainer.isInitialized
+        ) return
 
         refreshButton.isEnabled = false
         refreshButton.text = "Loading..."
@@ -431,7 +440,6 @@ class MainActivity : Activity() {
             )
 
             if (item.description.isNotBlank()) {
-
                 card.addView(
                     text(
                         item.description,

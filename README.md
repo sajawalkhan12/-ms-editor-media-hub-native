@@ -1,4 +1,4 @@
-# MS Editor Media Hub — Native Android starter
+# MS Editor — Native Android starter
 
 This is a native Kotlin Android app (not a WebView wrapper) using the existing Supabase project configuration found in the website source.
 

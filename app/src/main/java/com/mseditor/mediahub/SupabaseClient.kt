@@ -6,6 +6,7 @@ import android.os.Looper
 import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.concurrent.Executors
 
 data class MediaItem(
@@ -29,10 +30,13 @@ object SupabaseClient {
         callback: (Result<List<MediaItem>>) -> Unit
     ) {
         executor.execute {
+
             val result = runCatching {
+
+                val baseUrl = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+
                 val endpoint =
-                    SupabaseConfig.SUPABASE_URL +
-                    "/rest/v1/media_items?select=*&order=created_at.desc"
+                    "$baseUrl/rest/v1/media_items?select=*&order=created_at.desc"
 
                 val connection =
                     URL(endpoint).openConnection() as HttpURLConnection
@@ -41,13 +45,21 @@ object SupabaseClient {
                     connection.requestMethod = "GET"
                     connection.connectTimeout = 20000
                     connection.readTimeout = 20000
+                    connection.useCaches = false
+
                     connection.setRequestProperty(
                         "apikey",
-                        SupabaseConfig.SUPABASE_KEY
+                        SupabaseConfig.SUPABASE_KEY.trim()
                     )
+
                     connection.setRequestProperty(
                         "Accept",
                         "application/json"
+                    )
+
+                    connection.setRequestProperty(
+                        "Accept-Profile",
+                        "public"
                     )
 
                     val responseCode = connection.responseCode
@@ -61,14 +73,15 @@ object SupabaseClient {
                             connection.errorStream
                                 ?.bufferedReader()
                                 ?.use { it.readText() }
-                                ?: "Unknown server error"
+                                ?: "No error details returned"
 
                         throw Exception(
-                            "Supabase error $responseCode: $errorText"
+                            "Supabase HTTP $responseCode: $errorText"
                         )
                     }
 
                     parseMediaItems(response)
+
                 } finally {
                     connection.disconnect()
                 }
@@ -88,6 +101,7 @@ object SupabaseClient {
         val items = mutableListOf<MediaItem>()
 
         for (i in 0 until jsonArray.length()) {
+
             val item = jsonArray.getJSONObject(i)
 
             items.add(
@@ -109,17 +123,16 @@ object SupabaseClient {
     }
 
     fun getPublicMediaUrl(path: String): String {
+
         if (path.isBlank()) return ""
 
         val encodedPath = path.split("/")
             .joinToString("/") {
-                java.net.URLEncoder.encode(
-                    it,
-                    "UTF-8"
-                ).replace("+", "%20")
+                URLEncoder.encode(it, "UTF-8")
+                    .replace("+", "%20")
             }
 
-        return SupabaseConfig.SUPABASE_URL +
+        return SupabaseConfig.SUPABASE_URL.trimEnd('/') +
             "/storage/v1/object/public/media/" +
             encodedPath
     }

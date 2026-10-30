@@ -20,6 +20,11 @@ import android.view.ViewGroup
 import android.widget.*
 import android.text.TextWatcher
 import android.text.Editable
+import androidx.media3.common.MediaItem as ExoMediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
@@ -41,11 +46,12 @@ class MainActivity : Activity() {
     private var allMediaItems = listOf<MediaItem>()
     private var audioPlayer: MediaPlayer? = null
     private var currentAudioButton: Button? = null
-    private var currentVideo: VideoView? = null
-    private var selectedCategory = "Home"
 
+    private val videoPlayers = mutableListOf<ExoPlayer>()
     private val imageExecutor = Executors.newFixedThreadPool(3)
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    private var selectedCategory = "Home"
 
     private val categories = listOf(
         "Home",
@@ -86,7 +92,18 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun releaseVideos() {
+        videoPlayers.forEach { player ->
+            try {
+                player.release()
+            } catch (_: Exception) {
+            }
+        }
+        videoPlayers.clear()
+    }
+
     private fun showHome() {
+        releaseVideos()
         selectedCategory = "Home"
 
         root = LinearLayout(this).apply {
@@ -238,7 +255,10 @@ class MainActivity : Activity() {
 
         section.addView(text(category, 19f, emerald, true))
 
-        val count = allMediaItems.count { belongsToCategory(it, category) }
+        val count = allMediaItems.count {
+            belongsToCategory(it, category)
+        }
+
         val description = if (count == 0) {
             "Open category to view posts"
         } else {
@@ -354,20 +374,22 @@ class MainActivity : Activity() {
 
     private fun fileExtension(item: MediaItem): String {
         val path = item.externalUrl.ifBlank { item.storagePath }
+            .trim()
             .substringBefore("?")
             .lowercase()
 
         return path.substringAfterLast('.', "")
     }
 
-    // File extension takes priority over the database label.
     private fun mediaKind(item: MediaItem): String {
         return when (fileExtension(item)) {
             "mp4", "mov", "webm", "m4v" -> "video"
             "mp3", "m4a", "wav", "aac", "ogg", "flac" -> "audio"
             "jpg", "jpeg", "png", "webp", "gif" -> "image"
+
             else -> {
                 val type = item.mediaType.lowercase()
+
                 when {
                     type.contains("video") ||
                     type.contains("movie") ||
@@ -449,10 +471,11 @@ class MainActivity : Activity() {
 
             card.addView(text("Type: ${item.mediaType}", 12f, emerald))
 
-            val url = mediaUrl(item.externalUrl.ifBlank { item.storagePath })
+            val url = mediaUrl(
+                item.externalUrl.ifBlank { item.storagePath }
+            )
             val poster = mediaUrl(item.posterPath)
 
-            // Show poster before the video player.
             if (poster.isNotBlank() && mediaKind(item) != "image") {
                 card.addView(text("Post thumbnail", 11f, gold))
                 addImage(card, poster, 16f / 9f)
@@ -498,7 +521,6 @@ class MainActivity : Activity() {
         }
     }
 
-    // Image frame with a 16:9 ratio.
     private fun addImage(
         card: LinearLayout,
         url: String,
@@ -513,6 +535,7 @@ class MainActivity : Activity() {
             ) {
                 val width = MeasureSpec.getSize(widthMeasureSpec)
                 val height = (width / ratio).toInt()
+
                 super.onMeasure(
                     widthMeasureSpec,
                     MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
@@ -556,7 +579,7 @@ class MainActivity : Activity() {
                         imageView.setImageBitmap(bitmap)
                     }
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 mainHandler.post {
                     if (!isFinishing && !isDestroyed) {
                         imageView.setImageDrawable(null)
@@ -581,6 +604,7 @@ class MainActivity : Activity() {
             setTextColor(white)
             background = rounded(black, emerald)
         }
+
         card.addView(playButton)
 
         playButton.setOnClickListener {
@@ -608,6 +632,7 @@ class MainActivity : Activity() {
                         it.release()
                         return@setOnPreparedListener
                     }
+
                     playButton.isEnabled = true
                     playButton.text = "Ⅱ Pause Song"
                     it.start()
@@ -622,11 +647,13 @@ class MainActivity : Activity() {
                     playButton.isEnabled = true
                     playButton.text = "▶ Play Song"
                     releaseAudio()
+
                     Toast.makeText(
                         this,
                         "Audio play nahi ho saka.",
                         Toast.LENGTH_LONG
                     ).show()
+
                     true
                 }
 
@@ -635,6 +662,7 @@ class MainActivity : Activity() {
                 playButton.isEnabled = true
                 playButton.text = "▶ Play Song"
                 releaseAudio()
+
                 Toast.makeText(
                     this,
                     "Audio error: ${e.message}",
@@ -649,18 +677,22 @@ class MainActivity : Activity() {
             audioPlayer?.release()
         } catch (_: Exception) {
         }
+
         audioPlayer = null
         currentAudioButton = null
     }
 
+    // Media3 ExoPlayer video playback
     private fun addVideoPlayer(card: LinearLayout, url: String) {
         if (url.isBlank()) {
             card.addView(text("Video file URL nahi mili.", 13f, Color.RED))
             return
         }
 
-        val videoView = VideoView(this).apply {
+        val playerView = PlayerView(this).apply {
+            useController = true
             setBackgroundColor(Color.BLACK)
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
         }
 
         val frame = object : FrameLayout(this) {
@@ -670,6 +702,7 @@ class MainActivity : Activity() {
             ) {
                 val width = MeasureSpec.getSize(widthMeasureSpec)
                 val height = (width * 9f / 16f).toInt()
+
                 super.onMeasure(
                     widthMeasureSpec,
                     MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
@@ -678,33 +711,32 @@ class MainActivity : Activity() {
         }
 
         frame.layoutParams = LinearLayout.LayoutParams(-1, -2)
-        frame.addView(
-            videoView,
-            FrameLayout.LayoutParams(-1, -1)
-        )
+        frame.addView(playerView)
         card.addView(frame)
 
-        currentVideo = videoView
-
-        val controller = MediaController(this)
-        controller.setAnchorView(videoView)
-        videoView.setMediaController(controller)
-
         try {
-            videoView.setVideoURI(Uri.parse(url))
+            val player = ExoPlayer.Builder(this).build()
+            videoPlayers.add(player)
 
-            videoView.setOnPreparedListener { player ->
-                player.isLooping = false
-            }
+            playerView.player = player
 
-            videoView.setOnErrorListener { _, what, extra ->
-                Toast.makeText(
-                    this,
-                    "Video error: $what / $extra",
-                    Toast.LENGTH_LONG
-                ).show()
-                true
-            }
+            player.addListener(object : Player.Listener {
+                override fun onPlayerError(error: PlaybackException) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Video error: ${error.errorCodeName}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            })
+
+            player.setMediaItem(
+                ExoMediaItem.fromUri(Uri.parse(url))
+            )
+
+            player.prepare()
+            player.playWhenReady = false
+
         } catch (e: Exception) {
             card.addView(
                 text("Video error: ${e.message}", 12f, Color.RED)
@@ -716,7 +748,9 @@ class MainActivity : Activity() {
         val dialog = android.app.AlertDialog.Builder(this)
             .setTitle(item.title.ifBlank { "Prompt" })
             .setMessage(
-                item.description.ifBlank { "Is post mein prompt text nahi mila." }
+                item.description.ifBlank {
+                    "Is post mein prompt text nahi mila."
+                }
             )
             .setPositiveButton("Copy Prompt") { _, _ ->
                 val clipboard =
@@ -740,6 +774,7 @@ class MainActivity : Activity() {
     }
 
     private fun showCategory(name: String) {
+        releaseVideos()
         selectedCategory = name
 
         val page = LinearLayout(this).apply {
@@ -762,6 +797,7 @@ class MainActivity : Activity() {
             setPadding(dp(8), dp(8), dp(8), dp(8))
             setOnClickListener { showHome() }
         }
+
         header.addView(back)
         page.addView(header)
 
@@ -798,15 +834,21 @@ class MainActivity : Activity() {
                 card.addView(text(item.title, 17f, gold, true))
 
                 val poster = mediaUrl(item.posterPath)
-                if (poster.isNotBlank()) addImage(card, poster, 16f / 9f)
+                if (poster.isNotBlank()) {
+                    addImage(card, poster, 16f / 9f)
+                }
 
-                val url = mediaUrl(item.externalUrl.ifBlank { item.storagePath })
+                val url = mediaUrl(
+                    item.externalUrl.ifBlank { item.storagePath }
+                )
 
                 when (mediaKind(item)) {
                     "video" -> addVideoPlayer(card, url)
                     "audio" -> addAudioPlayer(card, url)
                     "image" -> addImage(card, url, 16f / 9f)
-                    else -> card.addView(text(item.description, 13f, white))
+                    else -> card.addView(
+                        text(item.description, 13f, white)
+                    )
                 }
 
                 if (
@@ -818,7 +860,9 @@ class MainActivity : Activity() {
                         Button(this).apply {
                             text = "View / Copy Prompt"
                             isAllCaps = false
-                            setOnClickListener { showPromptDialog(item) }
+                            setOnClickListener {
+                                showPromptDialog(item)
+                            }
                         }
                     )
                 }
@@ -843,10 +887,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         releaseAudio()
-        try {
-            currentVideo?.stopPlayback()
-        } catch (_: Exception) {
-        }
+        releaseVideos()
         imageExecutor.shutdownNow()
         super.onDestroy()
     }

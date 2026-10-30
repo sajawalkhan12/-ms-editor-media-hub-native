@@ -16,6 +16,7 @@ import android.content.Context
 import android.media.MediaPlayer
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.*
 import android.text.TextWatcher
 import android.text.Editable
@@ -40,8 +41,10 @@ class MainActivity : Activity() {
     private var allMediaItems = listOf<MediaItem>()
     private var audioPlayer: MediaPlayer? = null
     private var currentAudioButton: Button? = null
+    private var currentVideo: VideoView? = null
+    private var selectedCategory = "Home"
 
-    private val imageExecutor = Executors.newFixedThreadPool(2)
+    private val imageExecutor = Executors.newFixedThreadPool(3)
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val categories = listOf(
@@ -61,10 +64,7 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
 
-    private fun rounded(
-        color: Int,
-        stroke: Int = 0
-    ): GradientDrawable {
+    private fun rounded(color: Int, stroke: Int = 0): GradientDrawable {
         return GradientDrawable().apply {
             setColor(color)
             cornerRadius = dp(14).toFloat()
@@ -87,6 +87,7 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
+        selectedCategory = "Home"
 
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -107,7 +108,6 @@ class MainActivity : Activity() {
 
         brand.addView(text("MS EDITOR MEDIA HUB", 19f, emerald, true))
         brand.addView(text("Video Songs • Tutorials • Prompts", 12f, gold))
-
         header.addView(brand)
 
         val settings = text("⚙", 27f, gold, true).apply {
@@ -115,7 +115,6 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(5), dp(12), dp(5))
             setOnClickListener { showCategory("Settings") }
         }
-
         header.addView(settings)
         root.addView(header)
 
@@ -151,21 +150,12 @@ class MainActivity : Activity() {
             minWidth = 0
             minimumWidth = 0
             setPadding(dp(10), 0, dp(10), 0)
-
-            setOnClickListener {
-                Toast.makeText(
-                    this@MainActivity,
-                    "Refresh started",
-                    Toast.LENGTH_SHORT
-                ).show()
-                loadMediaItems()
-            }
+            setOnClickListener { loadMediaItems() }
         }
 
         val refreshParams = LinearLayout.LayoutParams(-2, dp(46))
         refreshParams.setMargins(dp(8), 0, 0, 0)
         searchRow.addView(refreshButton, refreshParams)
-
         root.addView(searchRow)
 
         val scroll = ScrollView(this).apply {
@@ -179,23 +169,16 @@ class MainActivity : Activity() {
         }
 
         scroll.addView(content)
-
-        root.addView(
-            scroll,
-            LinearLayout.LayoutParams(-1, 0, 1f)
-        )
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         content.addView(text("Latest Posts", 21f, gold, true))
 
         postsContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-
         content.addView(postsContainer)
 
-        categories.drop(1).forEach { category ->
-            addCategorySection(category)
-        }
+        categories.drop(1).forEach { addCategorySection(it) }
 
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(
@@ -205,9 +188,8 @@ class MainActivity : Activity() {
             override fun onTextChanged(
                 s: CharSequence?, start: Int, before: Int, count: Int
             ) {
-                val query = s?.toString() ?: ""
-                filterCategories(query)
-                filterMediaItems(query)
+                filterCategories(s?.toString() ?: "")
+                filterMediaItems(s?.toString() ?: "")
             }
 
             override fun afterTextChanged(s: Editable?) {}
@@ -232,31 +214,21 @@ class MainActivity : Activity() {
             val tab = text(item, 11f, emerald, true).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(3), dp(7), dp(3), dp(7))
-
                 setOnClickListener {
                     val category = item.substringAfter("\n")
-                    if (category == "Home") {
-                        showHome()
-                    } else {
-                        showCategory(category)
-                    }
+                    if (category == "Home") showHome()
+                    else showCategory(category)
                 }
             }
-
-            bottom.addView(
-                tab,
-                LinearLayout.LayoutParams(0, dp(58), 1f)
-            )
+            bottom.addView(tab, LinearLayout.LayoutParams(0, dp(58), 1f))
         }
 
         root.addView(bottom)
         setContentView(root)
-
         loadMediaItems()
     }
 
     private fun addCategorySection(category: String) {
-
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
@@ -266,15 +238,22 @@ class MainActivity : Activity() {
 
         section.addView(text(category, 19f, emerald, true))
 
+        val count = allMediaItems.count { belongsToCategory(it, category) }
+        val description = if (count == 0) {
+            "Open category to view posts"
+        } else {
+            "$count posts available"
+        }
+
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(12), dp(25), dp(12), dp(25))
+            setPadding(dp(12), dp(20), dp(12), dp(20))
             background = rounded(black, Color.rgb(30, 70, 75))
         }
 
         card.addView(text("♫", 35f, gold, true))
-        card.addView(text("Open category to view posts", 14f, white))
+        card.addView(text(description, 14f, white))
         section.addView(card)
 
         val viewButton = text("View  →", 14f, gold, true).apply {
@@ -292,23 +271,22 @@ class MainActivity : Activity() {
     }
 
     private fun filterCategories(query: String) {
+        if (!::content.isInitialized) return
+
         for (i in 0 until content.childCount) {
             val item = content.getChildAt(i)
             val category = item.tag?.toString() ?: ""
 
             if (category.isNotBlank()) {
                 item.visibility =
-                    if (category.contains(query, true) || query.isBlank()) {
+                    if (query.isBlank() || category.contains(query, true))
                         View.VISIBLE
-                    } else {
-                        View.GONE
-                    }
+                    else View.GONE
             }
         }
     }
 
     private fun loadMediaItems() {
-
         if (!::refreshButton.isInitialized ||
             !::postsContainer.isInitialized
         ) return
@@ -319,7 +297,6 @@ class MainActivity : Activity() {
         postsContainer.addView(text("Loading posts...", 14f, Color.LTGRAY))
 
         SupabaseClient.getMediaItems { result ->
-
             if (isFinishing || isDestroyed) return@getMediaItems
 
             refreshButton.isEnabled = true
@@ -327,14 +304,13 @@ class MainActivity : Activity() {
 
             result.onSuccess { items ->
                 allMediaItems = items
+                filterMediaItems(search.text.toString())
 
                 Toast.makeText(
                     this,
                     "Refresh complete: ${items.size} posts",
                     Toast.LENGTH_SHORT
                 ).show()
-
-                filterMediaItems(search.text.toString())
             }
 
             result.onFailure { error ->
@@ -346,22 +322,22 @@ class MainActivity : Activity() {
                         Color.RED
                     )
                 )
-
-                Toast.makeText(
-                    this,
-                    "Refresh failed: ${error.message}",
-                    Toast.LENGTH_LONG
-                ).show()
             }
         }
     }
 
     private fun filterMediaItems(query: String) {
-
         val filtered = allMediaItems.filter { item ->
-            item.title.contains(query, true) ||
-            item.description.contains(query, true) ||
-            item.mediaType.contains(query, true)
+            val matchesSearch = query.isBlank() ||
+                item.title.contains(query, true) ||
+                item.description.contains(query, true) ||
+                item.mediaType.contains(query, true)
+
+            val matchesCategory =
+                selectedCategory == "Home" ||
+                belongsToCategory(item, selectedCategory)
+
+            matchesSearch && matchesCategory
         }
 
         showMediaItems(filtered)
@@ -373,50 +349,79 @@ class MainActivity : Activity() {
         return if (
             path.startsWith("https://", true) ||
             path.startsWith("http://", true)
-        ) {
-            path
-        } else {
-            SupabaseClient.getPublicMediaUrl(path)
+        ) path else SupabaseClient.getPublicMediaUrl(path)
+    }
+
+    private fun fileExtension(item: MediaItem): String {
+        val path = item.externalUrl.ifBlank { item.storagePath }
+            .substringBefore("?")
+            .lowercase()
+
+        return path.substringAfterLast('.', "")
+    }
+
+    // File extension takes priority over the database label.
+    private fun mediaKind(item: MediaItem): String {
+        return when (fileExtension(item)) {
+            "mp4", "mov", "webm", "m4v" -> "video"
+            "mp3", "m4a", "wav", "aac", "ogg", "flac" -> "audio"
+            "jpg", "jpeg", "png", "webp", "gif" -> "image"
+            else -> {
+                val type = item.mediaType.lowercase()
+                when {
+                    type.contains("video") ||
+                    type.contains("movie") ||
+                    type.contains("trailer") ||
+                    type.contains("tutorial") -> "video"
+
+                    type.contains("audio") ||
+                    type.contains("song") -> "audio"
+
+                    type.contains("image") -> "image"
+                    type.contains("prompt") -> "text"
+                    else -> "text"
+                }
+            }
         }
     }
 
-    private fun mediaKind(item: MediaItem): String {
-
+    private fun belongsToCategory(
+        item: MediaItem,
+        category: String
+    ): Boolean {
         val type = item.mediaType.lowercase()
-        val url = (item.externalUrl.ifBlank { item.storagePath }).lowercase()
+        val title = item.title.lowercase()
+        val description = item.description.lowercase()
+        val combined = "$type $title $description"
+        val kind = mediaKind(item)
 
-        if (
-            type.contains("audio") ||
-            type.contains("song") ||
-            url.endsWith(".mp3") ||
-            url.endsWith(".m4a") ||
-            url.endsWith(".wav") ||
-            url.endsWith(".aac")
-        ) return "audio"
+        return when (category.lowercase()) {
+            "video songs" ->
+                (type.contains("song") || title.contains("song") ||
+                 description.contains("song")) && kind == "video"
 
-        if (
-            type.contains("image") ||
-            url.endsWith(".jpg") ||
-            url.endsWith(".jpeg") ||
-            url.endsWith(".png") ||
-            url.endsWith(".webp")
-        ) return "image"
+            "video prompt" ->
+                combined.contains("prompt") && kind == "video"
 
-        if (
-            type.contains("video") ||
-            type.contains("movie") ||
-            type.contains("trailer") ||
-            type.contains("tutorial") ||
-            url.endsWith(".mp4") ||
-            url.endsWith(".mov") ||
-            url.endsWith(".webm")
-        ) return "video"
+            "image prompt" ->
+                combined.contains("prompt") &&
+                    (kind == "image" || kind == "text")
 
-        return "text"
+            "assets" ->
+                combined.contains("asset") ||
+                    combined.contains("resource") ||
+                    combined.contains("template")
+
+            "tutorials" ->
+                combined.contains("tutorial") ||
+                    combined.contains("how to") ||
+                    combined.contains("guide")
+
+            else -> false
+        }
     }
 
     private fun showMediaItems(items: List<MediaItem>) {
-
         postsContainer.removeAllViews()
 
         if (items.isEmpty()) {
@@ -427,7 +432,6 @@ class MainActivity : Activity() {
         }
 
         items.forEach { item ->
-
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(14), dp(14), dp(14), dp(14))
@@ -443,9 +447,16 @@ class MainActivity : Activity() {
                 )
             )
 
-            card.addView(
-                text("Type: ${item.mediaType}", 12f, emerald)
-            )
+            card.addView(text("Type: ${item.mediaType}", 12f, emerald))
+
+            val url = mediaUrl(item.externalUrl.ifBlank { item.storagePath })
+            val poster = mediaUrl(item.posterPath)
+
+            // Show poster before the video player.
+            if (poster.isNotBlank() && mediaKind(item) != "image") {
+                card.addView(text("Post thumbnail", 11f, gold))
+                addImage(card, poster, 16f / 9f)
+            }
 
             if (item.description.isNotBlank()) {
                 val description = text(item.description, 13f, white)
@@ -453,58 +464,32 @@ class MainActivity : Activity() {
                 card.addView(description)
             }
 
-            val url = mediaUrl(item.externalUrl.ifBlank { item.storagePath })
-
             when (mediaKind(item)) {
                 "audio" -> addAudioPlayer(card, url)
                 "video" -> addVideoPlayer(card, url)
-                "image" -> addImage(card, url)
+                "image" -> addImage(card, url, 16f / 9f)
                 else -> {
                     if (url.isNotBlank()) {
-                        addImage(card, url)
+                        addImage(card, url, 16f / 9f)
                     }
                 }
-            }
-
-            // Optional poster/thumbnail
-            val poster = mediaUrl(item.posterPath)
-            if (poster.isNotBlank() && mediaKind(item) != "image") {
-                val label = text("Post thumbnail", 11f, gold)
-                label.setPadding(0, dp(8), 0, dp(4))
-                card.addView(label)
-                addImage(card, poster, dp(130))
             }
 
             if (
                 item.mediaType.contains("prompt", true) ||
+                item.title.contains("prompt", true) ||
                 item.description.contains("prompt", true)
             ) {
-                val copyButton = Button(this).apply {
-                    text = "Copy Text"
+                val promptButton = Button(this).apply {
+                    text = "View / Copy Prompt"
                     isAllCaps = false
                     setTextColor(white)
                     background = rounded(black, gold)
                     setOnClickListener {
-                        val clipboard =
-                            getSystemService(Context.CLIPBOARD_SERVICE)
-                                as ClipboardManager
-
-                        clipboard.setPrimaryClip(
-                            ClipData.newPlainText(
-                                "Post text",
-                                item.description
-                            )
-                        )
-
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Text copied",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        showPromptDialog(item)
                     }
                 }
-
-                card.addView(copyButton)
+                card.addView(promptButton)
             }
 
             val params = LinearLayout.LayoutParams(-1, -2)
@@ -513,56 +498,78 @@ class MainActivity : Activity() {
         }
     }
 
+    // Image frame with a 16:9 ratio.
     private fun addImage(
         card: LinearLayout,
         url: String,
-        height: Int = 210
+        ratio: Float
     ) {
         if (url.isBlank()) return
 
+        val frame = object : FrameLayout(this) {
+            override fun onMeasure(
+                widthMeasureSpec: Int,
+                heightMeasureSpec: Int
+            ) {
+                val width = MeasureSpec.getSize(widthMeasureSpec)
+                val height = (width / ratio).toInt()
+                super.onMeasure(
+                    widthMeasureSpec,
+                    MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+                )
+            }
+        }
+
+        frame.layoutParams = LinearLayout.LayoutParams(-1, -2)
+        frame.setBackgroundColor(Color.rgb(3, 12, 15))
+
         val imageView = ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(-1, height)
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
             scaleType = ImageView.ScaleType.FIT_CENTER
-            setBackgroundColor(Color.rgb(3, 12, 15))
             contentDescription = "Post image"
         }
 
-        card.addView(imageView)
+        frame.addView(imageView)
+        card.addView(frame)
 
         imageExecutor.execute {
-            try {
-                val connection =
-                    URL(url).openConnection() as HttpURLConnection
+            var connection: HttpURLConnection? = null
 
+            try {
+                connection = URL(url).openConnection() as HttpURLConnection
                 connection.connectTimeout = 20000
                 connection.readTimeout = 20000
                 connection.doInput = true
+                connection.instanceFollowRedirects = true
+
+                val code = connection.responseCode
+                if (code !in 200..299) {
+                    throw Exception("Image HTTP $code")
+                }
 
                 val bitmap = connection.inputStream.use {
                     BitmapFactory.decodeStream(it)
                 }
 
-                connection.disconnect()
-
-                if (bitmap != null) {
-                    mainHandler.post {
-                        if (!isFinishing && !isDestroyed) {
-                            imageView.setImageBitmap(bitmap)
-                        }
+                mainHandler.post {
+                    if (!isFinishing && !isDestroyed && bitmap != null) {
+                        imageView.setImageBitmap(bitmap)
                     }
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 mainHandler.post {
                     if (!isFinishing && !isDestroyed) {
                         imageView.setImageDrawable(null)
+                        imageView.contentDescription = "Image could not load"
                     }
                 }
+            } finally {
+                connection?.disconnect()
             }
         }
     }
 
     private fun addAudioPlayer(card: LinearLayout, url: String) {
-
         if (url.isBlank()) {
             card.addView(text("Audio file URL nahi mili.", 13f, Color.RED))
             return
@@ -574,11 +581,9 @@ class MainActivity : Activity() {
             setTextColor(white)
             background = rounded(black, emerald)
         }
-
         card.addView(playButton)
 
         playButton.setOnClickListener {
-
             if (audioPlayer?.isPlaying == true &&
                 currentAudioButton === playButton
             ) {
@@ -588,7 +593,6 @@ class MainActivity : Activity() {
             }
 
             releaseAudio()
-
             playButton.isEnabled = false
             playButton.text = "Loading audio..."
 
@@ -604,7 +608,6 @@ class MainActivity : Activity() {
                         it.release()
                         return@setOnPreparedListener
                     }
-
                     playButton.isEnabled = true
                     playButton.text = "Ⅱ Pause Song"
                     it.start()
@@ -621,19 +624,17 @@ class MainActivity : Activity() {
                     releaseAudio()
                     Toast.makeText(
                         this,
-                        "Audio play nahi ho saka. URL check karein.",
+                        "Audio play nahi ho saka.",
                         Toast.LENGTH_LONG
                     ).show()
                     true
                 }
 
                 player.prepareAsync()
-
             } catch (e: Exception) {
                 playButton.isEnabled = true
                 playButton.text = "▶ Play Song"
                 releaseAudio()
-
                 Toast.makeText(
                     this,
                     "Audio error: ${e.message}",
@@ -648,24 +649,42 @@ class MainActivity : Activity() {
             audioPlayer?.release()
         } catch (_: Exception) {
         }
-
         audioPlayer = null
         currentAudioButton = null
     }
 
     private fun addVideoPlayer(card: LinearLayout, url: String) {
-
         if (url.isBlank()) {
             card.addView(text("Video file URL nahi mili.", 13f, Color.RED))
             return
         }
 
         val videoView = VideoView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(-1, dp(220))
             setBackgroundColor(Color.BLACK)
         }
 
-        card.addView(videoView)
+        val frame = object : FrameLayout(this) {
+            override fun onMeasure(
+                widthMeasureSpec: Int,
+                heightMeasureSpec: Int
+            ) {
+                val width = MeasureSpec.getSize(widthMeasureSpec)
+                val height = (width * 9f / 16f).toInt()
+                super.onMeasure(
+                    widthMeasureSpec,
+                    MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+                )
+            }
+        }
+
+        frame.layoutParams = LinearLayout.LayoutParams(-1, -2)
+        frame.addView(
+            videoView,
+            FrameLayout.LayoutParams(-1, -1)
+        )
+        card.addView(frame)
+
+        currentVideo = videoView
 
         val controller = MediaController(this)
         controller.setAnchorView(videoView)
@@ -673,14 +692,15 @@ class MainActivity : Activity() {
 
         try {
             videoView.setVideoURI(Uri.parse(url))
+
             videoView.setOnPreparedListener { player ->
                 player.isLooping = false
             }
 
-            videoView.setOnErrorListener { _, _, _ ->
+            videoView.setOnErrorListener { _, what, extra ->
                 Toast.makeText(
                     this,
-                    "Video play nahi ho saka. File URL check karein.",
+                    "Video error: $what / $extra",
                     Toast.LENGTH_LONG
                 ).show()
                 true
@@ -692,45 +712,141 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showPromptDialog(item: MediaItem) {
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle(item.title.ifBlank { "Prompt" })
+            .setMessage(
+                item.description.ifBlank { "Is post mein prompt text nahi mila." }
+            )
+            .setPositiveButton("Copy Prompt") { _, _ ->
+                val clipboard =
+                    getSystemService(Context.CLIPBOARD_SERVICE)
+                        as ClipboardManager
+
+                clipboard.setPrimaryClip(
+                    ClipData.newPlainText("Prompt", item.description)
+                )
+
+                Toast.makeText(
+                    this,
+                    "Prompt copied",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .setNegativeButton("Close", null)
+            .create()
+
+        dialog.show()
+    }
+
     private fun showCategory(name: String) {
+        selectedCategory = name
 
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(20), dp(30), dp(20), dp(20))
             setBackgroundColor(black)
+            setPadding(dp(16), dp(20), dp(16), dp(12))
         }
 
-        page.addView(text("MS EDITOR MEDIA HUB", 20f, emerald, true))
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        header.addView(
+            text("MS EDITOR MEDIA HUB", 18f, emerald, true),
+            LinearLayout.LayoutParams(0, -2, 1f)
+        )
+
+        val back = text("← Home", 15f, gold, true).apply {
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setOnClickListener { showHome() }
+        }
+        header.addView(back)
+        page.addView(header)
 
         page.addView(
-            text(name, 25f, gold, true).apply {
-                setPadding(0, dp(35), 0, dp(25))
+            text(name, 24f, gold, true).apply {
+                setPadding(0, dp(18), 0, dp(12))
             }
         )
 
-        page.addView(
-            text(
-                "Category filtering ka agla step mein connection hoga.",
-                15f,
-                white
-            ).apply {
-                gravity = Gravity.CENTER
-            }
-        )
+        val scroll = ScrollView(this)
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
 
-        val back = text("← Back to Home", 17f, emerald, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(20), dp(25), dp(20), dp(25))
+        scroll.addView(list)
+        page.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val filtered = allMediaItems.filter {
+            belongsToCategory(it, name)
+        }
+
+        if (filtered.isEmpty()) {
+            list.addView(
+                text("Is category mein abhi koi post nahi hai.", 14f, white)
+            )
+        } else {
+            filtered.forEach { item ->
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(12), dp(12), dp(12), dp(12))
+                    background = rounded(panel, emerald)
+                }
+
+                card.addView(text(item.title, 17f, gold, true))
+
+                val poster = mediaUrl(item.posterPath)
+                if (poster.isNotBlank()) addImage(card, poster, 16f / 9f)
+
+                val url = mediaUrl(item.externalUrl.ifBlank { item.storagePath })
+
+                when (mediaKind(item)) {
+                    "video" -> addVideoPlayer(card, url)
+                    "audio" -> addAudioPlayer(card, url)
+                    "image" -> addImage(card, url, 16f / 9f)
+                    else -> card.addView(text(item.description, 13f, white))
+                }
+
+                if (
+                    item.mediaType.contains("prompt", true) ||
+                    item.title.contains("prompt", true) ||
+                    item.description.contains("prompt", true)
+                ) {
+                    card.addView(
+                        Button(this).apply {
+                            text = "View / Copy Prompt"
+                            isAllCaps = false
+                            setOnClickListener { showPromptDialog(item) }
+                        }
+                    )
+                }
+
+                val params = LinearLayout.LayoutParams(-1, -2)
+                params.setMargins(0, 0, 0, dp(12))
+                list.addView(card, params)
+            }
+        }
+
+        val homeButton = Button(this).apply {
+            text = "← Back to Home"
+            isAllCaps = false
+            setTextColor(white)
+            background = rounded(panel, gold)
             setOnClickListener { showHome() }
         }
 
-        page.addView(back)
+        page.addView(homeButton)
         setContentView(page)
     }
 
     override fun onDestroy() {
         releaseAudio()
+        try {
+            currentVideo?.stopPlayback()
+        } catch (_: Exception) {
+        }
         imageExecutor.shutdownNow()
         super.onDestroy()
     }

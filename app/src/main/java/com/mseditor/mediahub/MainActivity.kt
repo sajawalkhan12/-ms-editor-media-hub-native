@@ -3,14 +3,26 @@ package com.mseditor.mediahub
 
 import android.app.Activity
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.view.Gravity
 import android.view.View
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.*
 import android.text.TextWatcher
 import android.text.Editable
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
 
@@ -24,8 +36,15 @@ class MainActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var search: EditText
     private lateinit var postsContainer: LinearLayout
+    private lateinit var refreshButton: Button
 
     private var allMediaItems = listOf<MediaItem>()
+    private val mediaWebViews = mutableListOf<WebView>()
+
+    private val imageExecutor = Executors.newFixedThreadPool(3)
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private var selectedCategory = "Home"
 
     private val categories = listOf(
         "Home",
@@ -48,9 +67,7 @@ class MainActivity : Activity() {
         return GradientDrawable().apply {
             setColor(color)
             cornerRadius = dp(14).toFloat()
-            if (stroke != 0) {
-                setStroke(dp(1), stroke)
-            }
+            if (stroke != 0) setStroke(dp(1), stroke)
         }
     }
 
@@ -68,7 +85,21 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun releaseMediaPlayers() {
+        mediaWebViews.forEach { webView ->
+            try {
+                webView.stopLoading()
+                webView.loadUrl("about:blank")
+                webView.destroy()
+            } catch (_: Exception) {
+            }
+        }
+        mediaWebViews.clear()
+    }
+
     private fun showHome() {
+        releaseMediaPlayers()
+        selectedCategory = "Home"
 
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -87,24 +118,15 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
 
-        brand.addView(
-            text("MS EDITOR MEDIA HUB", 19f, emerald, true)
-        )
-
-        brand.addView(
-            text("Video Songs • Tutorials • Prompts", 12f, gold)
-        )
-
+        brand.addView(text("MS EDITOR MEDIA HUB", 19f, emerald, true))
+        brand.addView(text("Video Songs • Tutorials • Prompts", 12f, gold))
         header.addView(brand)
 
         val settings = text("⚙", 27f, gold, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(5), dp(12), dp(5))
-            setOnClickListener {
-                showCategory("Settings")
-            }
+            setOnClickListener { showCategory("Settings") }
         }
-
         header.addView(settings)
         root.addView(header)
 
@@ -129,23 +151,29 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(0, dp(46), 1f)
         )
 
-        val refresh = text("Refresh", 13f, white, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+        refreshButton = Button(this).apply {
+            text = "Refresh"
+            textSize = 13f
+            isAllCaps = false
+            setTextColor(white)
             background = rounded(panel, emerald)
-
-            setOnClickListener {
-                loadMediaItems()
-            }
+            minHeight = 0
+            minimumHeight = 0
+            minWidth = 0
+            minimumWidth = 0
+            setPadding(dp(10), 0, dp(10), 0)
+            setOnClickListener { loadMediaItems() }
         }
 
         val refreshParams = LinearLayout.LayoutParams(-2, dp(46))
         refreshParams.setMargins(dp(8), 0, 0, 0)
-        searchRow.addView(refresh, refreshParams)
-
+        searchRow.addView(refreshButton, refreshParams)
         root.addView(searchRow)
 
-        val scroll = ScrollView(this)
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(black)
+        }
 
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -153,44 +181,27 @@ class MainActivity : Activity() {
         }
 
         scroll.addView(content)
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        root.addView(
-            scroll,
-            LinearLayout.LayoutParams(0, 0, 1f)
-        )
-
-        content.addView(
-            text("Latest Posts", 21f, gold, true)
-        )
+        content.addView(text("Latest Posts", 21f, gold, true))
 
         postsContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-
         content.addView(postsContainer)
 
-        categories.drop(1).forEach { category ->
-            addCategorySection(category)
-        }
+        categories.drop(1).forEach { addCategorySection(it) }
 
         search.addTextChangedListener(object : TextWatcher {
-
             override fun beforeTextChanged(
-                s: CharSequence?,
-                start: Int,
-                count: Int,
-                after: Int
+                s: CharSequence?, start: Int, count: Int, after: Int
             ) {}
 
             override fun onTextChanged(
-                s: CharSequence?,
-                start: Int,
-                before: Int,
-                count: Int
+                s: CharSequence?, start: Int, before: Int, count: Int
             ) {
-                val query = s?.toString() ?: ""
-                filterCategories(query)
-                filterMediaItems(query)
+                filterCategories(s?.toString() ?: "")
+                filterMediaItems(s?.toString() ?: "")
             }
 
             override fun afterTextChanged(s: Editable?) {}
@@ -212,37 +223,24 @@ class MainActivity : Activity() {
         )
 
         bottomItems.forEach { item ->
-
             val tab = text(item, 11f, emerald, true).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(3), dp(7), dp(3), dp(7))
-
                 setOnClickListener {
                     val category = item.substringAfter("\n")
-
-                    if (category == "Home") {
-                        showHome()
-                    } else {
-                        showCategory(category)
-                    }
+                    if (category == "Home") showHome()
+                    else showCategory(category)
                 }
             }
-
-            bottom.addView(
-                tab,
-                LinearLayout.LayoutParams(0, dp(58), 1f)
-            )
+            bottom.addView(tab, LinearLayout.LayoutParams(0, dp(58), 1f))
         }
 
         root.addView(bottom)
-
         setContentView(root)
-
         loadMediaItems()
     }
 
     private fun addCategorySection(category: String) {
-
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
@@ -250,85 +248,91 @@ class MainActivity : Activity() {
             tag = category
         }
 
-        val heading = text(category, 19f, emerald, true)
-        section.addView(heading)
+        section.addView(text(category, 19f, emerald, true))
+
+        val count = allMediaItems.count {
+            belongsToCategory(it, category)
+        }
+
+        val description = if (count == 0) {
+            "Open category to view posts"
+        } else {
+            "$count posts available"
+        }
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(12), dp(25), dp(12), dp(25))
+            setPadding(dp(12), dp(20), dp(12), dp(20))
             background = rounded(black, Color.rgb(30, 70, 75))
         }
 
         card.addView(text("♫", 35f, gold, true))
-        card.addView(text("Open category to view posts", 14f, white))
-
+        card.addView(text(description, 14f, white))
         section.addView(card)
 
         val viewButton = text("View  →", 14f, gold, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(12), dp(10), dp(5))
-
-            setOnClickListener {
-                showCategory(category)
-            }
+            setOnClickListener { showCategory(category) }
         }
 
         section.addView(viewButton)
-
-        section.setOnClickListener {
-            showCategory(category)
-        }
+        section.setOnClickListener { showCategory(category) }
 
         val params = LinearLayout.LayoutParams(-1, -2)
         params.setMargins(0, 0, 0, dp(13))
-
         content.addView(section, params)
     }
 
     private fun filterCategories(query: String) {
+        if (!::content.isInitialized) return
 
         for (i in 0 until content.childCount) {
-
             val item = content.getChildAt(i)
             val category = item.tag?.toString() ?: ""
 
             if (category.isNotBlank()) {
                 item.visibility =
-                    if (category.contains(query, true) || query.isBlank()) {
+                    if (query.isBlank() || category.contains(query, true))
                         View.VISIBLE
-                    } else {
-                        View.GONE
-                    }
+                    else View.GONE
             }
         }
     }
 
     private fun loadMediaItems() {
+        if (!::refreshButton.isInitialized ||
+            !::postsContainer.isInitialized
+        ) return
 
+        refreshButton.isEnabled = false
+        refreshButton.text = "Loading..."
         postsContainer.removeAllViews()
-
-        postsContainer.addView(
-            text("Loading posts...", 14f, Color.LTGRAY)
-        )
+        postsContainer.addView(text("Loading posts...", 14f, Color.LTGRAY))
 
         SupabaseClient.getMediaItems { result ->
+            if (isFinishing || isDestroyed) return@getMediaItems
+
+            refreshButton.isEnabled = true
+            refreshButton.text = "Refresh"
 
             result.onSuccess { items ->
-
                 allMediaItems = items
+                filterMediaItems(search.text.toString())
 
-                val query = search.text.toString()
-                filterMediaItems(query)
+                Toast.makeText(
+                    this,
+                    "Refresh complete: ${items.size} posts",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
 
             result.onFailure { error ->
-
                 postsContainer.removeAllViews()
-
                 postsContainer.addView(
                     text(
-                        "Posts load nahi huin: ${error.message}",
+                        "Posts load nahi huin:\n${error.message}",
                         13f,
                         Color.RED
                     )
@@ -338,36 +342,113 @@ class MainActivity : Activity() {
     }
 
     private fun filterMediaItems(query: String) {
-
         val filtered = allMediaItems.filter { item ->
+            val matchesSearch = query.isBlank() ||
+                item.title.contains(query, true) ||
+                item.description.contains(query, true) ||
+                item.mediaType.contains(query, true)
 
-            item.title.contains(query, true) ||
-            item.description.contains(query, true) ||
-            item.mediaType.contains(query, true)
+            val matchesCategory =
+                selectedCategory == "Home" ||
+                belongsToCategory(item, selectedCategory)
+
+            matchesSearch && matchesCategory
         }
 
         showMediaItems(filtered)
     }
 
-    private fun showMediaItems(items: List<MediaItem>) {
+    private fun mediaUrl(path: String): String {
+        if (path.isBlank()) return ""
 
+        return if (
+            path.startsWith("https://", true) ||
+            path.startsWith("http://", true)
+        ) path else SupabaseClient.getPublicMediaUrl(path)
+    }
+
+    private fun fileExtension(item: MediaItem): String {
+        val path = item.externalUrl.ifBlank { item.storagePath }
+            .trim()
+            .substringBefore("?")
+            .lowercase()
+
+        return path.substringAfterLast('.', "")
+    }
+
+    private fun mediaKind(item: MediaItem): String {
+        return when (fileExtension(item)) {
+            "mp4", "mov", "webm", "m4v" -> "video"
+            "mp3", "m4a", "wav", "aac", "ogg", "flac" -> "audio"
+            "jpg", "jpeg", "png", "webp", "gif" -> "image"
+
+            else -> {
+                val type = item.mediaType.lowercase()
+
+                when {
+                    type.contains("video") ||
+                    type.contains("movie") ||
+                    type.contains("trailer") ||
+                    type.contains("tutorial") -> "video"
+
+                    type.contains("audio") ||
+                    type.contains("song") -> "audio"
+
+                    type.contains("image") -> "image"
+                    type.contains("prompt") -> "text"
+                    else -> "text"
+                }
+            }
+        }
+    }
+
+    private fun belongsToCategory(
+        item: MediaItem,
+        category: String
+    ): Boolean {
+        val type = item.mediaType.lowercase()
+        val title = item.title.lowercase()
+        val description = item.description.lowercase()
+        val combined = "$type $title $description"
+        val kind = mediaKind(item)
+
+        return when (category.lowercase()) {
+            "video songs" ->
+                (type.contains("song") || title.contains("song") ||
+                 description.contains("song")) && kind == "video"
+
+            "video prompt" ->
+                combined.contains("prompt") && kind == "video"
+
+            "image prompt" ->
+                combined.contains("prompt") &&
+                    (kind == "image" || kind == "text")
+
+            "assets" ->
+                combined.contains("asset") ||
+                    combined.contains("resource") ||
+                    combined.contains("template")
+
+            "tutorials" ->
+                combined.contains("tutorial") ||
+                    combined.contains("how to") ||
+                    combined.contains("guide")
+
+            else -> false
+        }
+    }
+
+    private fun showMediaItems(items: List<MediaItem>) {
         postsContainer.removeAllViews()
 
         if (items.isEmpty()) {
-
             postsContainer.addView(
-                text(
-                    "Abhi koi post available nahi hai.",
-                    14f,
-                    white
-                )
+                text("Abhi koi post available nahi hai.", 14f, white)
             )
-
             return
         }
 
         items.forEach { item ->
-
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(14), dp(14), dp(14), dp(14))
@@ -383,72 +464,380 @@ class MainActivity : Activity() {
                 )
             )
 
-            card.addView(
-                text(
-                    "Type: ${item.mediaType}",
-                    12f,
-                    emerald
-                )
+            card.addView(text("Type: ${item.mediaType}", 12f, emerald))
+
+            val url = mediaUrl(
+                item.externalUrl.ifBlank { item.storagePath }
             )
+            val poster = mediaUrl(item.posterPath)
+
+            if (poster.isNotBlank() && mediaKind(item) != "image") {
+                card.addView(text("Post thumbnail", 11f, gold))
+                addImage(card, poster, 16f / 9f)
+            }
 
             if (item.description.isNotBlank()) {
+                val description = text(item.description, 13f, white)
+                description.setPadding(0, dp(7), 0, dp(8))
+                card.addView(description)
+            }
 
-                card.addView(
-                    text(
-                        item.description,
-                        13f,
-                        white
-                    )
-                )
+            when (mediaKind(item)) {
+                "audio" -> addHtmlMediaPlayer(card, url, false)
+                "video" -> addHtmlMediaPlayer(card, url, true)
+                "image" -> addImage(card, url, 16f / 9f)
+                else -> {
+                    if (url.isNotBlank()) addImage(card, url, 16f / 9f)
+                }
+            }
+
+            if (
+                item.mediaType.contains("prompt", true) ||
+                item.title.contains("prompt", true) ||
+                item.description.contains("prompt", true)
+            ) {
+                val promptButton = Button(this).apply {
+                    text = "View / Copy Prompt"
+                    isAllCaps = false
+                    setTextColor(white)
+                    background = rounded(black, gold)
+                    setOnClickListener { showPromptDialog(item) }
+                }
+                card.addView(promptButton)
             }
 
             val params = LinearLayout.LayoutParams(-1, -2)
             params.setMargins(0, 0, 0, dp(12))
-
             postsContainer.addView(card, params)
         }
     }
 
+    private fun addImage(
+        card: LinearLayout,
+        url: String,
+        ratio: Float
+    ) {
+        if (url.isBlank()) return
+
+        val frame = object : FrameLayout(this) {
+            override fun onMeasure(
+                widthMeasureSpec: Int,
+                heightMeasureSpec: Int
+            ) {
+                val width = MeasureSpec.getSize(widthMeasureSpec)
+                val height = (width / ratio).toInt()
+                super.onMeasure(
+                    widthMeasureSpec,
+                    MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+                )
+            }
+        }
+
+        frame.layoutParams = LinearLayout.LayoutParams(-1, -2)
+        frame.setBackgroundColor(Color.rgb(3, 12, 15))
+
+        val imageView = ImageView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Post image"
+        }
+
+        frame.addView(imageView)
+        card.addView(frame)
+
+        imageExecutor.execute {
+            var connection: HttpURLConnection? = null
+
+            try {
+                connection = URL(url).openConnection() as HttpURLConnection
+                connection.connectTimeout = 20000
+                connection.readTimeout = 20000
+                connection.doInput = true
+                connection.instanceFollowRedirects = true
+
+                val code = connection.responseCode
+                if (code !in 200..299) throw Exception("Image HTTP $code")
+
+                val bitmap = connection.inputStream.use {
+                    BitmapFactory.decodeStream(it)
+                }
+
+                mainHandler.post {
+                    if (!isFinishing && !isDestroyed && bitmap != null) {
+                        imageView.setImageBitmap(bitmap)
+                    }
+                }
+            } catch (_: Exception) {
+                mainHandler.post {
+                    if (!isFinishing && !isDestroyed) {
+                        imageView.setImageDrawable(null)
+                        imageView.contentDescription = "Image could not load"
+                    }
+                }
+            } finally {
+                connection?.disconnect()
+            }
+        }
+    }
+
+    private fun escapeHtml(value: String): String {
+        return value
+            .replace("&", "&amp;")
+            .replace("\"", "&quot;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+    }
+
+    // Website-style HTML5 audio and video player
+    private fun addHtmlMediaPlayer(
+        card: LinearLayout,
+        url: String,
+        isVideo: Boolean
+    ) {
+        if (url.isBlank()) {
+            card.addView(
+                text(
+                    if (isVideo) "Video file URL nahi mili."
+                    else "Audio file URL nahi mili.",
+                    13f,
+                    Color.RED
+                )
+            )
+            return
+        }
+
+        val webView = WebView(this)
+        mediaWebViews.add(webView)
+
+        webView.setBackgroundColor(Color.BLACK)
+        webView.settings.javaScriptEnabled = false
+        webView.settings.domStorageEnabled = false
+        webView.settings.mediaPlaybackRequiresUserGesture = true
+        webView.webChromeClient = WebChromeClient()
+        webView.webViewClient = WebViewClient()
+
+        val playerHeight = if (isVideo) dp(220) else dp(85)
+
+        webView.layoutParams = LinearLayout.LayoutParams(-1, playerHeight)
+
+        val safeUrl = escapeHtml(url)
+
+        val playerHtml = if (isVideo) {
+            """
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                html, body {
+                    margin: 0;
+                    padding: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: #000;
+                    overflow: hidden;
+                }
+                video {
+                    width: 100%;
+                    height: 100%;
+                    background: #000;
+                    object-fit: contain;
+                }
+            </style>
+            </head>
+            <body>
+                <video controls playsinline preload="metadata">
+                    <source src="$safeUrl">
+                    Your browser does not support HTML5 video.
+                </video>
+            </body>
+            </html>
+            """.trimIndent()
+        } else {
+            """
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                html, body {
+                    margin: 0;
+                    padding: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: #091d25;
+                    display: flex;
+                    align-items: center;
+                }
+                audio {
+                    width: 100%;
+                }
+            </style>
+            </head>
+            <body>
+                <audio controls preload="metadata">
+                    <source src="$safeUrl">
+                    Your browser does not support HTML5 audio.
+                </audio>
+            </body>
+            </html>
+            """.trimIndent()
+        }
+
+        card.addView(webView)
+
+        webView.loadDataWithBaseURL(
+            url,
+            playerHtml,
+            "text/html",
+            "UTF-8",
+            null
+        )
+    }
+
+    private fun showPromptDialog(item: MediaItem) {
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle(item.title.ifBlank { "Prompt" })
+            .setMessage(
+                item.description.ifBlank {
+                    "Is post mein prompt text nahi mila."
+                }
+            )
+            .setPositiveButton("Copy Prompt") { _, _ ->
+                val clipboard =
+                    getSystemService(Context.CLIPBOARD_SERVICE)
+                        as ClipboardManager
+
+                clipboard.setPrimaryClip(
+                    ClipData.newPlainText("Prompt", item.description)
+                )
+
+                Toast.makeText(
+                    this,
+                    "Prompt copied",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .setNegativeButton("Close", null)
+            .create()
+
+        dialog.show()
+    }
+
     private fun showCategory(name: String) {
+        releaseMediaPlayers()
+        selectedCategory = name
 
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(20), dp(30), dp(20), dp(20))
             setBackgroundColor(black)
+            setPadding(dp(16), dp(20), dp(16), dp(12))
         }
 
-        page.addView(
-            text("MS EDITOR MEDIA HUB", 20f, emerald, true)
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        header.addView(
+            text("MS EDITOR MEDIA HUB", 18f, emerald, true),
+            LinearLayout.LayoutParams(0, -2, 1f)
         )
 
+        val back = text("← Home", 15f, gold, true).apply {
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setOnClickListener { showHome() }
+        }
+
+        header.addView(back)
+        page.addView(header)
+
         page.addView(
-            text(name, 25f, gold, true).apply {
-                setPadding(0, dp(35), 0, dp(25))
+            text(name, 24f, gold, true).apply {
+                setPadding(0, dp(18), 0, dp(12))
             }
         )
 
-        page.addView(
-            text(
-                "Category posts ka agla step mein connection hoga.",
-                15f,
-                white
-            ).apply {
-                gravity = Gravity.CENTER
-            }
-        )
+        val scroll = ScrollView(this)
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
 
-        val back = text("← Back to Home", 17f, emerald, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(20), dp(25), dp(20), dp(25))
-            setOnClickListener {
-                showHome()
+        scroll.addView(list)
+        page.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val filtered = allMediaItems.filter {
+            belongsToCategory(it, name)
+        }
+
+        if (filtered.isEmpty()) {
+            list.addView(
+                text("Is category mein abhi koi post nahi hai.", 14f, white)
+            )
+        } else {
+            filtered.forEach { item ->
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(12), dp(12), dp(12), dp(12))
+                    background = rounded(panel, emerald)
+                }
+
+                card.addView(text(item.title, 17f, gold, true))
+
+                val poster = mediaUrl(item.posterPath)
+                if (poster.isNotBlank()) {
+                    addImage(card, poster, 16f / 9f)
+                }
+
+                val url = mediaUrl(
+                    item.externalUrl.ifBlank { item.storagePath }
+                )
+
+                when (mediaKind(item)) {
+                    "video" -> addHtmlMediaPlayer(card, url, true)
+                    "audio" -> addHtmlMediaPlayer(card, url, false)
+                    "image" -> addImage(card, url, 16f / 9f)
+                    else -> card.addView(
+                        text(item.description, 13f, white)
+                    )
+                }
+
+                if (
+                    item.mediaType.contains("prompt", true) ||
+                    item.title.contains("prompt", true) ||
+                    item.description.contains("prompt", true)
+                ) {
+                    card.addView(
+                        Button(this).apply {
+                            text = "View / Copy Prompt"
+                            isAllCaps = false
+                            setOnClickListener { showPromptDialog(item) }
+                        }
+                    )
+                }
+
+                val params = LinearLayout.LayoutParams(-1, -2)
+                params.setMargins(0, 0, 0, dp(12))
+                list.addView(card, params)
             }
         }
 
-        page.addView(back)
+        val homeButton = Button(this).apply {
+            text = "← Back to Home"
+            isAllCaps = false
+            setTextColor(white)
+            background = rounded(panel, gold)
+            setOnClickListener { showHome() }
+        }
 
+        page.addView(homeButton)
         setContentView(page)
+    }
+
+    override fun onDestroy() {
+        releaseMediaPlayers()
+        imageExecutor.shutdownNow()
+        super.onDestroy()
     }
 
     @Suppress("DEPRECATION")

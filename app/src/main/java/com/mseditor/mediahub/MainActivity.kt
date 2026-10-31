@@ -699,15 +699,28 @@ class MainActivity : Activity() {
 
             player.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
-                    if (!isFinishing && !isDestroyed) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Playback error: ${error.errorCodeName}",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
+    var details = error.message ?: "No message"
+
+    var cause: Throwable? = error.cause
+    while (cause != null) {
+        details += "\n${cause.javaClass.simpleName}: ${cause.message}"
+        cause = cause.cause
+    }
+
+    android.util.Log.e(
+        "MSMediaPlayer",
+        "Playback failed: ${error.errorCodeName}\n$details",
+        error
+    )
+
+    if (!isFinishing && !isDestroyed) {
+        Toast.makeText(
+            this@MainActivity,
+            "Playback error: ${error.errorCodeName}",
+            Toast.LENGTH_LONG
+        ).show()
+    }
                 }
-            })
 
             player.setMediaItem(ExoMediaItem.fromUri(url))
             player.prepare()

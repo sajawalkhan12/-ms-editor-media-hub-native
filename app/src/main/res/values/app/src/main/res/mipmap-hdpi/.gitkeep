@@ -1,1 +1,0 @@
-Launcher icon folder

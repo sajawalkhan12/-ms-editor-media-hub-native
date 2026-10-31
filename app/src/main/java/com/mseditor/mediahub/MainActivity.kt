@@ -24,6 +24,7 @@ import java.util.concurrent.Executors
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.ui.PlayerView
 
 class MainActivity : Activity() {
@@ -41,7 +42,6 @@ class MainActivity : Activity() {
     private lateinit var refreshButton: Button
 
     private var allMediaItems = listOf<MediaItem>()
-
     private val exoPlayers = mutableListOf<ExoPlayer>()
 
     private val imageExecutor = Executors.newFixedThreadPool(3)
@@ -641,12 +641,13 @@ class MainActivity : Activity() {
             val player = ExoPlayer.Builder(this).build()
             exoPlayers.add(player)
 
-            val playerView = PlayerView(this).apply {
-                useController = true
-                controllerAutoShow = true
-                setBackgroundColor(Color.BLACK)
-                player = this@MainActivity.run { player }
-            }
+            // PlayerView ko alag banaya gaya hai.
+            // Isse 'val cannot be reassigned' compile error nahi aayega.
+            val playerView = PlayerView(this)
+            playerView.useController = true
+            playerView.controllerAutoShow = true
+            playerView.setBackgroundColor(Color.BLACK)
+            playerView.player = player
 
             if (isVideo) {
                 val frame = object : FrameLayout(this) {
@@ -693,12 +694,7 @@ class MainActivity : Activity() {
                 }
             })
 
-            playerView.player = player
-
-            player.setMediaItem(
-                androidx.media3.common.MediaItem.fromUri(url)
-            )
-
+            player.setMediaItem(ExoMediaItem.fromUri(url))
             player.prepare()
             player.playWhenReady = false
 

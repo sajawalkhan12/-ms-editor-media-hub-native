@@ -26,6 +26,8 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.ui.PlayerView
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 
 class MainActivity : Activity() {
 
@@ -638,11 +640,24 @@ class MainActivity : Activity() {
         }
 
         try {
-            val player = ExoPlayer.Builder(this).build()
+            // Custom HTTP connection settings for Supabase media.
+            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent(
+                    "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36"
+                )
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(30000)
+                .setReadTimeoutMs(30000)
+
+            val mediaSourceFactory =
+                DefaultMediaSourceFactory(httpDataSourceFactory)
+
+            val player = ExoPlayer.Builder(this)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build()
+
             exoPlayers.add(player)
 
-            // PlayerView ko alag banaya gaya hai.
-            // Isse 'val cannot be reassigned' compile error nahi aayega.
             val playerView = PlayerView(this)
             playerView.useController = true
             playerView.controllerAutoShow = true

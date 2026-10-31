@@ -14,15 +14,17 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.view.Gravity
 import android.view.View
-import android.webkit.WebChromeClient
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.*
 import android.text.TextWatcher
 import android.text.Editable
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
+
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.ui.PlayerView
 
 class MainActivity : Activity() {
 
@@ -39,7 +41,8 @@ class MainActivity : Activity() {
     private lateinit var refreshButton: Button
 
     private var allMediaItems = listOf<MediaItem>()
-    private val mediaWebViews = mutableListOf<WebView>()
+
+    private val exoPlayers = mutableListOf<ExoPlayer>()
 
     private val imageExecutor = Executors.newFixedThreadPool(3)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -86,15 +89,14 @@ class MainActivity : Activity() {
     }
 
     private fun releaseMediaPlayers() {
-        mediaWebViews.forEach { webView ->
+        exoPlayers.forEach { player ->
             try {
-                webView.stopLoading()
-                webView.loadUrl("about:blank")
-                webView.destroy()
+                player.stop()
+                player.release()
             } catch (_: Exception) {
             }
         }
-        mediaWebViews.clear()
+        exoPlayers.clear()
     }
 
     private fun showHome() {
@@ -127,6 +129,7 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(5), dp(12), dp(5))
             setOnClickListener { showCategory("Settings") }
         }
+
         header.addView(settings)
         root.addView(header)
 
@@ -188,6 +191,7 @@ class MainActivity : Activity() {
         postsContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
+
         content.addView(postsContainer)
 
         categories.drop(1).forEach { addCategorySection(it) }
@@ -232,6 +236,7 @@ class MainActivity : Activity() {
                     else showCategory(category)
                 }
             }
+
             bottom.addView(tab, LinearLayout.LayoutParams(0, dp(58), 1f))
         }
 
@@ -371,6 +376,7 @@ class MainActivity : Activity() {
         val path = item.externalUrl.ifBlank { item.storagePath }
             .trim()
             .substringBefore("?")
+            .substringBefore("#")
             .lowercase()
 
         return path.substringAfterLast('.', "")
@@ -378,7 +384,7 @@ class MainActivity : Activity() {
 
     private fun mediaKind(item: MediaItem): String {
         return when (fileExtension(item)) {
-            "mp4", "mov", "webm", "m4v" -> "video"
+            "mp4", "mov", "webm", "m4v", "mkv" -> "video"
             "mp3", "m4a", "wav", "aac", "ogg", "flac" -> "audio"
             "jpg", "jpeg", "png", "webp", "gif" -> "image"
 
@@ -392,7 +398,8 @@ class MainActivity : Activity() {
                     type.contains("tutorial") -> "video"
 
                     type.contains("audio") ||
-                    type.contains("song") -> "audio"
+                    type == "song" ||
+                    type.contains("audio song") -> "audio"
 
                     type.contains("image") -> "image"
                     type.contains("prompt") -> "text"
@@ -400,6 +407,20 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun isImagePrompt(item: MediaItem): Boolean {
+        val combined =
+            "${item.mediaType} ${item.title} ${item.description}"
+
+        return combined.contains("prompt", true) &&
+            (mediaKind(item) == "image" || mediaKind(item) == "text")
+    }
+
+    private fun isPrompt(item: MediaItem): Boolean {
+        return item.mediaType.contains("prompt", true) ||
+            item.title.contains("prompt", true) ||
+            item.description.contains("prompt", true)
     }
 
     private fun belongsToCategory(
@@ -421,8 +442,7 @@ class MainActivity : Activity() {
                 combined.contains("prompt") && kind == "video"
 
             "image prompt" ->
-                combined.contains("prompt") &&
-                    (kind == "image" || kind == "text")
+                isImagePrompt(item)
 
             "assets" ->
                 combined.contains("asset") ||
@@ -439,6 +459,7 @@ class MainActivity : Activity() {
     }
 
     private fun showMediaItems(items: List<MediaItem>) {
+        releaseMediaPlayers()
         postsContainer.removeAllViews()
 
         if (items.isEmpty()) {
@@ -471,34 +492,34 @@ class MainActivity : Activity() {
             )
             val poster = mediaUrl(item.posterPath)
 
-            if (item.description.isNotBlank()) {
-                val description = text(item.description, 13f, white)
-                description.setPadding(0, dp(7), 0, dp(8))
-                card.addView(description)
-            }
-
-            when (mediaKind(item)) {
-                "audio" -> addHtmlMediaPlayer(card, url, false)
-                "video" -> addHtmlMediaPlayer(card, url, true, poster)
-                "image" -> addImage(card, url, 16f / 9f)
-                else -> {
-                    if (url.isNotBlank()) addImage(card, url, 16f / 9f)
+            if (isImagePrompt(item)) {
+                if (url.isNotBlank()) {
+                    addImage(card, url, 16f / 9f)
                 }
-            }
 
-            if (
-                item.mediaType.contains("prompt", true) ||
-                item.title.contains("prompt", true) ||
-                item.description.contains("prompt", true)
-            ) {
-                val promptButton = Button(this).apply {
-                    text = "View / Copy Prompt"
-                    isAllCaps = false
-                    setTextColor(white)
-                    background = rounded(black, gold)
-                    setOnClickListener { showPromptDialog(item) }
+                addViewPromptButton(card, item)
+
+            } else {
+                if (item.description.isNotBlank()) {
+                    val description = text(item.description, 13f, white)
+                    description.setPadding(0, dp(7), 0, dp(8))
+                    card.addView(description)
                 }
-                card.addView(promptButton)
+
+                when (mediaKind(item)) {
+                    "audio" -> addNativeMediaPlayer(card, url, false)
+                    "video" -> addNativeMediaPlayer(card, url, true, poster)
+                    "image" -> addImage(card, url, 16f / 9f)
+                    else -> {
+                        if (url.isNotBlank()) {
+                            addImage(card, url, 16f / 9f)
+                        }
+                    }
+                }
+
+                if (isPrompt(item)) {
+                    addViewPromptButton(card, item)
+                }
             }
 
             val params = LinearLayout.LayoutParams(-1, -2)
@@ -507,12 +528,35 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun addViewPromptButton(
+        card: LinearLayout,
+        item: MediaItem
+    ) {
+        val button = Button(this).apply {
+            text = "View Prompt"
+            isAllCaps = false
+            textSize = 14f
+            setTextColor(white)
+            background = rounded(black, gold)
+            setOnClickListener {
+                showPromptDialog(item)
+            }
+        }
+
+        val params = LinearLayout.LayoutParams(-1, dp(48))
+        params.setMargins(0, dp(10), 0, 0)
+        card.addView(button, params)
+    }
+
     private fun addImage(
         card: LinearLayout,
         url: String,
         ratio: Float
     ) {
-        if (url.isBlank()) return
+        if (url.isBlank()) {
+            card.addView(text("Image URL nahi mili.", 13f, Color.RED))
+            return
+        }
 
         val frame = object : FrameLayout(this) {
             override fun onMeasure(
@@ -575,17 +619,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun escapeHtml(value: String): String {
-        return value
-            .replace("&", "&amp;")
-            .replace("\"", "&quot;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("'", "&#39;")
-    }
-
-    // HTML5 media player with 16:9 video frame and poster inside player
-    private fun addHtmlMediaPlayer(
+    private fun addNativeMediaPlayer(
         card: LinearLayout,
         url: String,
         isVideo: Boolean,
@@ -603,157 +637,143 @@ class MainActivity : Activity() {
             return
         }
 
-        val webView = WebView(this)
-        mediaWebViews.add(webView)
+        try {
+            val player = ExoPlayer.Builder(this).build()
+            exoPlayers.add(player)
 
-        webView.setBackgroundColor(Color.BLACK)
-        webView.settings.javaScriptEnabled = false
-        webView.settings.domStorageEnabled = false
-        webView.settings.mediaPlaybackRequiresUserGesture = true
-        webView.settings.loadsImagesAutomatically = true
-        webView.webChromeClient = WebChromeClient()
-        webView.webViewClient = WebViewClient()
+            val playerView = PlayerView(this).apply {
+                useController = true
+                controllerAutoShow = true
+                setBackgroundColor(Color.BLACK)
+                player = this@MainActivity.run { player }
+            }
 
-        val safeUrl = escapeHtml(url)
-        val safePoster = escapeHtml(posterUrl)
-
-        if (isVideo) {
-            val videoFrame = object : FrameLayout(this) {
-                override fun onMeasure(
-                    widthMeasureSpec: Int,
-                    heightMeasureSpec: Int
-                ) {
-                    val width = MeasureSpec.getSize(widthMeasureSpec)
-                    val height = (width * 9 / 16)
-                    super.onMeasure(
-                        widthMeasureSpec,
-                        MeasureSpec.makeMeasureSpec(
-                            height,
-                            MeasureSpec.EXACTLY
+            if (isVideo) {
+                val frame = object : FrameLayout(this) {
+                    override fun onMeasure(
+                        widthMeasureSpec: Int,
+                        heightMeasureSpec: Int
+                    ) {
+                        val width = MeasureSpec.getSize(widthMeasureSpec)
+                        val height = width * 9 / 16
+                        super.onMeasure(
+                            widthMeasureSpec,
+                            MeasureSpec.makeMeasureSpec(
+                                height,
+                                MeasureSpec.EXACTLY
+                            )
                         )
-                    )
+                    }
                 }
-            }
 
-            videoFrame.layoutParams =
-                LinearLayout.LayoutParams(-1, -2)
-            videoFrame.setBackgroundColor(Color.BLACK)
+                frame.layoutParams = LinearLayout.LayoutParams(-1, -2)
+                frame.setBackgroundColor(Color.BLACK)
 
-            webView.layoutParams =
-                FrameLayout.LayoutParams(-1, -1)
+                playerView.layoutParams =
+                    FrameLayout.LayoutParams(-1, -1)
 
-            videoFrame.addView(webView)
-            card.addView(videoFrame)
-        } else {
-            webView.layoutParams =
-                LinearLayout.LayoutParams(-1, dp(85))
-            card.addView(webView)
-        }
+                frame.addView(playerView)
+                card.addView(frame)
 
-        val playerHtml = if (isVideo) {
-            val posterAttribute = if (safePoster.isNotBlank()) {
-                """poster="$safePoster""""
             } else {
-                ""
+                playerView.layoutParams =
+                    LinearLayout.LayoutParams(-1, dp(80))
+                card.addView(playerView)
             }
 
-            """
-            <!DOCTYPE html>
-            <html>
-            <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                html, body {
-                    margin: 0;
-                    padding: 0;
-                    width: 100%;
-                    height: 100%;
-                    background: #000;
-                    overflow: hidden;
+            player.addListener(object : Player.Listener {
+                override fun onPlayerError(error: PlaybackException) {
+                    if (!isFinishing && !isDestroyed) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Playback error: ${error.errorCodeName}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
                 }
-                video {
-                    display: block;
-                    width: 100%;
-                    height: 100%;
-                    background: #000;
-                    object-fit: contain;
-                }
-            </style>
-            </head>
-            <body>
-                <video controls playsinline preload="metadata" $posterAttribute>
-                    <source src="$safeUrl">
-                    Your browser does not support HTML5 video.
-                </video>
-            </body>
-            </html>
-            """.trimIndent()
-        } else {
-            """
-            <!DOCTYPE html>
-            <html>
-            <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                html, body {
-                    margin: 0;
-                    padding: 0;
-                    width: 100%;
-                    height: 100%;
-                    background: #091d25;
-                    display: flex;
-                    align-items: center;
-                }
-                audio {
-                    width: 100%;
-                }
-            </style>
-            </head>
-            <body>
-                <audio controls preload="metadata">
-                    <source src="$safeUrl">
-                    Your browser does not support HTML5 audio.
-                </audio>
-            </body>
-            </html>
-            """.trimIndent()
-        }
+            })
 
-        // Use the Supabase origin as the HTML base URL, not the video URL.
-        webView.loadDataWithBaseURL(
-            "https://mgjrrgsbddppffnvnmgs.supabase.co/",
-            playerHtml,
-            "text/html",
-            "UTF-8",
-            null
-        )
+            playerView.player = player
+
+            player.setMediaItem(
+                androidx.media3.common.MediaItem.fromUri(url)
+            )
+
+            player.prepare()
+            player.playWhenReady = false
+
+        } catch (error: Exception) {
+            card.addView(
+                text(
+                    "Player start nahi hua: ${error.message}",
+                    13f,
+                    Color.RED
+                )
+            )
+        }
     }
 
     private fun showPromptDialog(item: MediaItem) {
+        val promptText = item.description.ifBlank {
+            "Is post mein prompt text nahi mila."
+        }
+
+        val promptBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(12), dp(18), dp(8))
+            setBackgroundColor(panel)
+        }
+
+        val promptContent = TextView(this).apply {
+            text = promptText
+            textSize = 15f
+            setTextColor(white)
+            setTextIsSelectable(true)
+            setPadding(dp(4), dp(8), dp(4), dp(8))
+        }
+
+        val promptScroll = ScrollView(this).apply {
+            addView(promptContent)
+        }
+
+        promptBox.addView(
+            promptScroll,
+            LinearLayout.LayoutParams(-1, dp(300))
+        )
+
+        val copyButton = Button(this).apply {
+            text = "Copy Prompt"
+            isAllCaps = false
+            setTextColor(white)
+            background = rounded(black, gold)
+        }
+
+        promptBox.addView(
+            copyButton,
+            LinearLayout.LayoutParams(-1, dp(48))
+        )
+
         val dialog = android.app.AlertDialog.Builder(this)
             .setTitle(item.title.ifBlank { "Prompt" })
-            .setMessage(
-                item.description.ifBlank {
-                    "Is post mein prompt text nahi mila."
-                }
-            )
-            .setPositiveButton("Copy Prompt") { _, _ ->
-                val clipboard =
-                    getSystemService(Context.CLIPBOARD_SERVICE)
-                        as ClipboardManager
-
-                clipboard.setPrimaryClip(
-                    ClipData.newPlainText("Prompt", item.description)
-                )
-
-                Toast.makeText(
-                    this,
-                    "Prompt copied",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            .setView(promptBox)
             .setNegativeButton("Close", null)
             .create()
+
+        copyButton.setOnClickListener {
+            val clipboard =
+                getSystemService(Context.CLIPBOARD_SERVICE)
+                    as ClipboardManager
+
+            clipboard.setPrimaryClip(
+                ClipData.newPlainText("Prompt", promptText)
+            )
+
+            Toast.makeText(
+                this,
+                "Prompt copied",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
 
         dialog.show()
     }
@@ -817,39 +837,39 @@ class MainActivity : Activity() {
                 }
 
                 card.addView(text(item.title, 17f, gold, true))
+                card.addView(text("Type: ${item.mediaType}", 12f, emerald))
 
                 val url = mediaUrl(
                     item.externalUrl.ifBlank { item.storagePath }
                 )
                 val poster = mediaUrl(item.posterPath)
 
-                if (item.description.isNotBlank()) {
-                    card.addView(text(item.description, 13f, white))
-                }
+                if (isImagePrompt(item)) {
+                    if (url.isNotBlank()) {
+                        addImage(card, url, 16f / 9f)
+                    }
 
-                when (mediaKind(item)) {
-                    "video" -> addHtmlMediaPlayer(card, url, true, poster)
-                    "audio" -> addHtmlMediaPlayer(card, url, false)
-                    "image" -> addImage(card, url, 16f / 9f)
-                    else -> {
-                        if (url.isNotBlank()) {
-                            addImage(card, url, 16f / 9f)
+                    addViewPromptButton(card, item)
+
+                } else {
+                    if (item.description.isNotBlank()) {
+                        card.addView(text(item.description, 13f, white))
+                    }
+
+                    when (mediaKind(item)) {
+                        "video" -> addNativeMediaPlayer(card, url, true, poster)
+                        "audio" -> addNativeMediaPlayer(card, url, false)
+                        "image" -> addImage(card, url, 16f / 9f)
+                        else -> {
+                            if (url.isNotBlank()) {
+                                addImage(card, url, 16f / 9f)
+                            }
                         }
                     }
-                }
 
-                if (
-                    item.mediaType.contains("prompt", true) ||
-                    item.title.contains("prompt", true) ||
-                    item.description.contains("prompt", true)
-                ) {
-                    card.addView(
-                        Button(this).apply {
-                            text = "View / Copy Prompt"
-                            isAllCaps = false
-                            setOnClickListener { showPromptDialog(item) }
-                        }
-                    )
+                    if (isPrompt(item)) {
+                        addViewPromptButton(card, item)
+                    }
                 }
 
                 val params = LinearLayout.LayoutParams(-1, -2)

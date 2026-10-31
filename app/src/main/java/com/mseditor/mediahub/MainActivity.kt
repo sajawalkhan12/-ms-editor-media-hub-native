@@ -471,11 +471,6 @@ class MainActivity : Activity() {
             )
             val poster = mediaUrl(item.posterPath)
 
-            if (poster.isNotBlank() && mediaKind(item) != "image") {
-                card.addView(text("Post thumbnail", 11f, gold))
-                addImage(card, poster, 16f / 9f)
-            }
-
             if (item.description.isNotBlank()) {
                 val description = text(item.description, 13f, white)
                 description.setPadding(0, dp(7), 0, dp(8))
@@ -484,7 +479,7 @@ class MainActivity : Activity() {
 
             when (mediaKind(item)) {
                 "audio" -> addHtmlMediaPlayer(card, url, false)
-                "video" -> addHtmlMediaPlayer(card, url, true)
+                "video" -> addHtmlMediaPlayer(card, url, true, poster)
                 "image" -> addImage(card, url, 16f / 9f)
                 else -> {
                     if (url.isNotBlank()) addImage(card, url, 16f / 9f)
@@ -586,13 +581,15 @@ class MainActivity : Activity() {
             .replace("\"", "&quot;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
+            .replace("'", "&#39;")
     }
 
-    // Website-style HTML5 audio and video player
+    // HTML5 media player with 16:9 video frame and poster inside player
     private fun addHtmlMediaPlayer(
         card: LinearLayout,
         url: String,
-        isVideo: Boolean
+        isVideo: Boolean,
+        posterUrl: String = ""
     ) {
         if (url.isBlank()) {
             card.addView(
@@ -613,16 +610,53 @@ class MainActivity : Activity() {
         webView.settings.javaScriptEnabled = false
         webView.settings.domStorageEnabled = false
         webView.settings.mediaPlaybackRequiresUserGesture = true
+        webView.settings.loadsImagesAutomatically = true
         webView.webChromeClient = WebChromeClient()
         webView.webViewClient = WebViewClient()
 
-        val playerHeight = if (isVideo) dp(220) else dp(85)
-
-        webView.layoutParams = LinearLayout.LayoutParams(-1, playerHeight)
-
         val safeUrl = escapeHtml(url)
+        val safePoster = escapeHtml(posterUrl)
+
+        if (isVideo) {
+            val videoFrame = object : FrameLayout(this) {
+                override fun onMeasure(
+                    widthMeasureSpec: Int,
+                    heightMeasureSpec: Int
+                ) {
+                    val width = MeasureSpec.getSize(widthMeasureSpec)
+                    val height = (width * 9 / 16)
+                    super.onMeasure(
+                        widthMeasureSpec,
+                        MeasureSpec.makeMeasureSpec(
+                            height,
+                            MeasureSpec.EXACTLY
+                        )
+                    )
+                }
+            }
+
+            videoFrame.layoutParams =
+                LinearLayout.LayoutParams(-1, -2)
+            videoFrame.setBackgroundColor(Color.BLACK)
+
+            webView.layoutParams =
+                FrameLayout.LayoutParams(-1, -1)
+
+            videoFrame.addView(webView)
+            card.addView(videoFrame)
+        } else {
+            webView.layoutParams =
+                LinearLayout.LayoutParams(-1, dp(85))
+            card.addView(webView)
+        }
 
         val playerHtml = if (isVideo) {
+            val posterAttribute = if (safePoster.isNotBlank()) {
+                """poster="$safePoster""""
+            } else {
+                ""
+            }
+
             """
             <!DOCTYPE html>
             <html>
@@ -638,6 +672,7 @@ class MainActivity : Activity() {
                     overflow: hidden;
                 }
                 video {
+                    display: block;
                     width: 100%;
                     height: 100%;
                     background: #000;
@@ -646,7 +681,7 @@ class MainActivity : Activity() {
             </style>
             </head>
             <body>
-                <video controls playsinline preload="metadata">
+                <video controls playsinline preload="metadata" $posterAttribute>
                     <source src="$safeUrl">
                     Your browser does not support HTML5 video.
                 </video>
@@ -684,10 +719,9 @@ class MainActivity : Activity() {
             """.trimIndent()
         }
 
-        card.addView(webView)
-
+        // Use the Supabase origin as the HTML base URL, not the video URL.
         webView.loadDataWithBaseURL(
-            url,
+            "https://mgjrrgsbddppffnvnmgs.supabase.co/",
             playerHtml,
             "text/html",
             "UTF-8",
@@ -784,22 +818,24 @@ class MainActivity : Activity() {
 
                 card.addView(text(item.title, 17f, gold, true))
 
-                val poster = mediaUrl(item.posterPath)
-                if (poster.isNotBlank()) {
-                    addImage(card, poster, 16f / 9f)
-                }
-
                 val url = mediaUrl(
                     item.externalUrl.ifBlank { item.storagePath }
                 )
+                val poster = mediaUrl(item.posterPath)
+
+                if (item.description.isNotBlank()) {
+                    card.addView(text(item.description, 13f, white))
+                }
 
                 when (mediaKind(item)) {
-                    "video" -> addHtmlMediaPlayer(card, url, true)
+                    "video" -> addHtmlMediaPlayer(card, url, true, poster)
                     "audio" -> addHtmlMediaPlayer(card, url, false)
                     "image" -> addImage(card, url, 16f / 9f)
-                    else -> card.addView(
-                        text(item.description, 13f, white)
-                    )
+                    else -> {
+                        if (url.isNotBlank()) {
+                            addImage(card, url, 16f / 9f)
+                        }
+                    }
                 }
 
                 if (

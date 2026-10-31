@@ -640,7 +640,6 @@ class MainActivity : Activity() {
         }
 
         try {
-            // Custom HTTP connection settings for Supabase media.
             val httpDataSourceFactory = DefaultHttpDataSource.Factory()
                 .setUserAgent(
                     "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36"
@@ -699,28 +698,29 @@ class MainActivity : Activity() {
 
             player.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
-    var details = error.message ?: "No message"
+                    var details = error.message ?: "No message"
 
-    var cause: Throwable? = error.cause
-    while (cause != null) {
-        details += "\n${cause.javaClass.simpleName}: ${cause.message}"
-        cause = cause.cause
-    }
+                    var cause: Throwable? = error.cause
+                    while (cause != null) {
+                        details += "\n${cause.javaClass.simpleName}: ${cause.message}"
+                        cause = cause.cause
+                    }
 
-    android.util.Log.e(
-        "MSMediaPlayer",
-        "Playback failed: ${error.errorCodeName}\n$details",
-        error
-    )
+                    android.util.Log.e(
+                        "MSMediaPlayer",
+                        "Playback failed: ${error.errorCodeName}\n$details",
+                        error
+                    )
 
-    if (!isFinishing && !isDestroyed) {
-        Toast.makeText(
-            this@MainActivity,
-            "Playback error: ${error.errorCodeName}",
-            Toast.LENGTH_LONG
-        ).show()
-    }
+                    if (!isFinishing && !isDestroyed) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Playback error: ${error.errorCodeName}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
                 }
+            })
 
             player.setMediaItem(ExoMediaItem.fromUri(url))
             player.prepare()

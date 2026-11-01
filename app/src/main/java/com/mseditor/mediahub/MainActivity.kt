@@ -12,6 +12,10 @@ import android.graphics.drawable.GradientDrawable
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.app.DownloadManager
+import android.os.Environment
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -524,6 +528,8 @@ class MainActivity : Activity() {
                 }
             }
 
+            addEngagementControls(card, item, url)
+
             val params = LinearLayout.LayoutParams(-1, -2)
             params.setMargins(0, 0, 0, dp(12))
             postsContainer.addView(card, params)
@@ -912,6 +918,159 @@ class MainActivity : Activity() {
 
         page.addView(homeButton)
         setContentView(page)
+    }
+
+    private fun visitorId(): String {
+        val prefs = getSharedPreferences("media_hub_local", MODE_PRIVATE)
+        var id = prefs.getString("visitor_id", null)
+        if (id.isNullOrBlank()) {
+            id = java.util.UUID.randomUUID().toString()
+            prefs.edit().putString("visitor_id", id).apply()
+        }
+        return id
+    }
+
+    private fun actionButton(label: String, onClick: () -> Unit): Button {
+        return Button(this).apply {
+            text = label
+            isAllCaps = false
+            textSize = 12f
+            setTextColor(white)
+            background = rounded(black, emerald)
+            setPadding(dp(3), 0, dp(3), 0)
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun addEngagementControls(card: LinearLayout, item: MediaItem, mediaUrl: String) {
+        val stats = text("♥ Likes: …     Comments: …", 12f, gold)
+        stats.setPadding(0, dp(10), 0, dp(5))
+        card.addView(stats)
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        fun addAction(label: String, click: () -> Unit) {
+            val button = actionButton(label, click)
+            val p = LinearLayout.LayoutParams(0, dp(44), 1f)
+            p.setMargins(dp(2), dp(3), dp(2), dp(3))
+            actions.addView(button, p)
+        }
+        addAction("♥ Like") {
+            SupabaseClient.toggleLike(item.id, visitorId()) { result ->
+                result.onSuccess { loadEngagement(item, stats) }
+                    .onFailure { Toast.makeText(this, "Like save nahi hua: ${it.message}", Toast.LENGTH_LONG).show() }
+            }
+        }
+        addAction("💬 Comment") { showComments(item, stats) }
+        addAction("↗ Share") {
+            if (mediaUrl.isBlank()) {
+                Toast.makeText(this, "Share link available nahi hai.", Toast.LENGTH_SHORT).show()
+            } else {
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, "${item.title}\n$mediaUrl")
+                }
+                startActivity(Intent.createChooser(send, "Share media"))
+            }
+        }
+        addAction("↓ Download") {
+            if (mediaUrl.isBlank()) {
+                Toast.makeText(this, "Download link available nahi hai.", Toast.LENGTH_SHORT).show()
+            } else {
+                try {
+                    val request = DownloadManager.Request(Uri.parse(mediaUrl))
+                        .setTitle(item.title.ifBlank { "MS Editor Media" })
+                        .setDescription("Downloading media")
+                        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                        .setAllowedOverMetered(true)
+                        .setAllowedOverRoaming(true)
+                    val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+                    manager.enqueue(request)
+                    Toast.makeText(this, "Download shuru ho gaya.", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Download nahi hua: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        card.addView(actions)
+        loadEngagement(item, stats)
+    }
+
+    private fun loadEngagement(item: MediaItem, stats: TextView) {
+        SupabaseClient.getEngagement(item.id, visitorId()) { result ->
+            result.onSuccess { data ->
+                stats.text = "${if (data.likedByMe) "♥ Liked" else "♥ Like"} · ${data.likes} likes     💬 ${data.comments.size} comments"
+            }.onFailure {
+                stats.text = "Likes/comments load nahi huay"
+                android.util.Log.e("MSMediaEngagement", "Load failed", it)
+            }
+        }
+    }
+
+    private fun showComments(item: MediaItem, stats: TextView) {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(12), dp(18), dp(8))
+            setBackgroundColor(panel)
+        }
+        val list = TextView(this).apply {
+            textSize = 14f
+            setTextColor(white)
+            setPadding(0, 0, 0, dp(10))
+        }
+        val name = EditText(this).apply {
+            hint = "Aapka naam (optional)"
+            setTextColor(white)
+            setHintTextColor(Color.LTGRAY)
+            setSingleLine(true)
+        }
+        val message = EditText(this).apply {
+            hint = "Comment likhein"
+            setTextColor(white)
+            setHintTextColor(Color.LTGRAY)
+            minLines = 2
+        }
+        layout.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, dp(190)))
+        layout.addView(name)
+        layout.addView(message)
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Comments · ${item.title}")
+            .setView(layout)
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Post", null)
+            .create()
+        fun refreshComments() {
+            SupabaseClient.getEngagement(item.id, visitorId()) { result ->
+                result.onSuccess { data ->
+                    list.text = if (data.comments.isEmpty()) "Abhi koi comment nahi." else
+                        data.comments.joinToString("\n\n") { "${it.name}: ${it.text}" }
+                    stats.text = "${if (data.likedByMe) "♥ Liked" else "♥ Like"} · ${data.likes} likes     💬 ${data.comments.size} comments"
+                }.onFailure { list.text = "Comments load nahi huay: ${it.message}" }
+            }
+        }
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val comment = message.text.toString().trim()
+                if (comment.isBlank()) {
+                    message.error = "Comment likhein"
+                    return@setOnClickListener
+                }
+                val visitorName = name.text.toString().trim().ifBlank { "Visitor" }.take(60)
+                SupabaseClient.addComment(item.id, visitorName, comment) { result ->
+                    result.onSuccess {
+                        message.text.clear()
+                        refreshComments()
+                        Toast.makeText(this, "Comment post ho gaya.", Toast.LENGTH_SHORT).show()
+                    }.onFailure {
+                        Toast.makeText(this, "Comment post nahi hua: ${it.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+        dialog.show()
+        refreshComments()
     }
 
     override fun onDestroy() {

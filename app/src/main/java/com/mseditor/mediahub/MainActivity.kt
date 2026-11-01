@@ -266,12 +266,9 @@ class MainActivity : Activity() {
         val count = allMediaItems.count {
             belongsToCategory(it, category)
         }
+        if (count == 0) return
 
-        val description = if (count == 0) {
-            "Open category to view posts"
-        } else {
-            "$count posts available"
-        }
+        val description = "$count posts available"
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -439,18 +436,21 @@ class MainActivity : Activity() {
 
     private fun isImagePrompt(item: MediaItem): Boolean {
         val combined =
-            "${item.mediaType} ${item.title} ${item.description}"
+            "${item.mediaType} ${item.title} ${item.description} ${item.promptText}"
 
-        return item.mediaType.equals("image_prompt", true) ||
-            (combined.contains("image prompt", true) ||
-             (combined.contains("prompt", true) &&
-              (mediaKind(item) == "image" || mediaKind(item) == "text")))
+        val type = item.mediaType.trim().lowercase().replace('-', '_').replace(' ', '_')
+        return type == "image_prompt" ||
+            combined.contains("image prompt", true) ||
+            (item.promptText.isNotBlank() &&
+                !combined.contains("video prompt", true) &&
+                mediaKind(item) != "video")
     }
 
     private fun isPrompt(item: MediaItem): Boolean {
         return item.mediaType.contains("prompt", true) ||
             item.title.contains("prompt", true) ||
-            item.description.contains("prompt", true)
+            item.description.contains("prompt", true) ||
+            item.promptText.isNotBlank()
     }
 
     private fun belongsToCategory(
@@ -673,7 +673,7 @@ class MainActivity : Activity() {
         val youtubeId = if (isVideo) youtubeVideoId(url) else ""
         if (youtubeId.isNotBlank()) {
             val web = WebView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(-1, dp(210))
+                layoutParams = LinearLayout.LayoutParams(-1, -1)
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.mediaPlaybackRequiresUserGesture = true
@@ -685,7 +685,16 @@ class MainActivity : Activity() {
                     "text/html", "UTF-8", null
                 )
             }
-            card.addView(web)
+            val videoFrame = object : FrameLayout(this) {
+                override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                    val width = MeasureSpec.getSize(widthMeasureSpec)
+                    val height = width * 9 / 16
+                    super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
+                }
+            }
+            videoFrame.layoutParams = LinearLayout.LayoutParams(-1, -2)
+            videoFrame.addView(web, FrameLayout.LayoutParams(-1, -1))
+            card.addView(videoFrame)
             return
         }
 
@@ -788,8 +797,8 @@ class MainActivity : Activity() {
     }
 
     private fun showPromptDialog(item: MediaItem) {
-        val promptText = item.promptText.ifBlank {
-            item.description.ifBlank { "Is post mein prompt text nahi mila." }
+        val promptText = item.promptText.trim().ifBlank {
+            item.description.trim().ifBlank { "Is post ka prompt text database mein nahi mila. Admin website par is post ka Prompt Text field check karein." }
         }
 
         val promptBox = LinearLayout(this).apply {

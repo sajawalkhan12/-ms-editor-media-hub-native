@@ -595,6 +595,10 @@ class MainActivity : Activity() {
                 connection.readTimeout = 20000
                 connection.doInput = true
                 connection.instanceFollowRedirects = true
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36")
+                connection.setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+                connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                connection.setRequestProperty("Authorization", "Bearer ${SupabaseConfig.SUPABASE_KEY.trim()}")
 
                 val code = connection.responseCode
                 if (code !in 200..299) throw Exception("Image HTTP $code")
@@ -608,11 +612,12 @@ class MainActivity : Activity() {
                         imageView.setImageBitmap(bitmap)
                     }
                 }
-            } catch (_: Exception) {
+            } catch (error: Exception) {
                 mainHandler.post {
                     if (!isFinishing && !isDestroyed) {
                         imageView.setImageDrawable(null)
                         imageView.contentDescription = "Image could not load"
+                        card.addView(text("Image load failed: ${error.message ?: "Unknown error"}", 12f, Color.RED))
                     }
                 }
             } finally {
@@ -645,6 +650,13 @@ class MainActivity : Activity() {
                     "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36"
                 )
                 .setAllowCrossProtocolRedirects(true)
+                .setDefaultRequestProperties(
+                    mapOf(
+                        "apikey" to SupabaseConfig.SUPABASE_KEY.trim(),
+                        "Authorization" to "Bearer ${SupabaseConfig.SUPABASE_KEY.trim()}",
+                        "Accept" to "*/*"
+                    )
+                )
                 .setConnectTimeoutMs(30000)
                 .setReadTimeoutMs(30000)
 
@@ -715,7 +727,7 @@ class MainActivity : Activity() {
                     if (!isFinishing && !isDestroyed) {
                         Toast.makeText(
                             this@MainActivity,
-                            "Playback error: ${error.errorCodeName}",
+                            "Playback error: ${error.errorCodeName} — ${details.take(180)}",
                             Toast.LENGTH_LONG
                         ).show()
                     }

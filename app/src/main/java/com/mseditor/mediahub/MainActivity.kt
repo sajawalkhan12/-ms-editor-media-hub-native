@@ -19,6 +19,8 @@ import android.os.Environment
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.text.TextWatcher
 import android.text.Editable
 import java.net.HttpURLConnection
@@ -388,7 +390,27 @@ class MainActivity : Activity() {
         return path.substringAfterLast('.', "")
     }
 
+    private fun youtubeVideoId(value: String): String {
+        return try {
+            val uri = Uri.parse(value.trim())
+            val host = (uri.host ?: "").lowercase()
+            val id = when {
+                host.endsWith("youtu.be") -> uri.lastPathSegment ?: ""
+                host.contains("youtube.com") -> when {
+                    uri.path == "/watch" -> uri.getQueryParameter("v") ?: ""
+                    else -> uri.pathSegments.let { parts ->
+                        val index = parts.indexOfFirst { it in listOf("embed", "shorts", "live", "v") }
+                        if (index >= 0 && index + 1 < parts.size) parts[index + 1] else ""
+                    }
+                }
+                else -> ""
+            }
+            if (id.matches(Regex("[A-Za-z0-9_-]{11}"))) id else ""
+        } catch (_: Exception) { "" }
+    }
+
     private fun mediaKind(item: MediaItem): String {
+        if (youtubeVideoId(item.externalUrl).isNotBlank()) return "video"
         return when (fileExtension(item)) {
             "mp4", "mov", "webm", "m4v", "mkv" -> "video"
             "mp3", "m4a", "wav", "aac", "ogg", "flac" -> "audio"
@@ -419,8 +441,10 @@ class MainActivity : Activity() {
         val combined =
             "${item.mediaType} ${item.title} ${item.description}"
 
-        return combined.contains("prompt", true) &&
-            (mediaKind(item) == "image" || mediaKind(item) == "text")
+        return item.mediaType.equals("image_prompt", true) ||
+            (combined.contains("image prompt", true) ||
+             (combined.contains("prompt", true) &&
+              (mediaKind(item) == "image" || mediaKind(item) == "text")))
     }
 
     private fun isPrompt(item: MediaItem): Boolean {
@@ -433,34 +457,36 @@ class MainActivity : Activity() {
         item: MediaItem,
         category: String
     ): Boolean {
-        val type = item.mediaType.lowercase()
+        val type = item.mediaType.lowercase().replace('-', '_').replace(' ', '_')
         val title = item.title.lowercase()
         val description = item.description.lowercase()
-        val combined = "$type $title $description"
+        val prompt = item.promptText.lowercase()
+        val combined = "$type $title $description $prompt"
         val kind = mediaKind(item)
 
         return when (category.lowercase()) {
             "video songs" ->
-                (type.contains("song") || title.contains("song") ||
-                 description.contains("song")) && kind == "video"
+                (type.contains("song") || type == "video" ||
+                 title.contains("song") || description.contains("song")) &&
+                    (kind == "video" || youtubeVideoId(item.externalUrl).isNotBlank())
 
             "video prompt" ->
-                combined.contains("prompt") && kind == "video"
+                (type.contains("video_prompt") ||
+                 (combined.contains("prompt") && kind == "video"))
 
             "image prompt" ->
                 isImagePrompt(item)
 
-            "assets" ->
-                combined.contains("asset") ||
-                    combined.contains("resource") ||
-                    combined.contains("template")
+            "assets", "presets & assets" ->
+                type in listOf("assets", "asset", "image", "movie", "trailer", "preset", "presets") ||
+                    combined.contains("asset") || combined.contains("resource") ||
+                    combined.contains("template") || kind == "image"
 
-            "tutorials" ->
-                combined.contains("tutorial") ||
-                    combined.contains("how to") ||
-                    combined.contains("guide")
+            "tutorials", "video tutorial" ->
+                type.contains("tutorial") || combined.contains("tutorial") ||
+                    combined.contains("how to") || combined.contains("guide")
 
-            else -> false
+            else -> type == category.lowercase().replace(' ', '_')
         }
     }
 
@@ -497,6 +523,12 @@ class MainActivity : Activity() {
                 item.externalUrl.ifBlank { item.storagePath }
             )
             val poster = mediaUrl(item.posterPath)
+            val youtubeId = youtubeVideoId(item.externalUrl.ifBlank { url })
+            if (poster.isBlank() && youtubeId.isNotBlank()) {
+                addImage(card, "https://img.youtube.com/vi/$youtubeId/hqdefault.jpg", 16f / 9f)
+            } else if (poster.isNotBlank() && mediaKind(item) == "video") {
+                addImage(card, poster, 16f / 9f)
+            }
 
             if (isImagePrompt(item)) {
                 if (url.isNotBlank()) {
@@ -634,14 +666,26 @@ class MainActivity : Activity() {
         posterUrl: String = ""
     ) {
         if (url.isBlank()) {
-            card.addView(
-                text(
-                    if (isVideo) "Video file URL nahi mili."
-                    else "Audio file URL nahi mili.",
-                    13f,
-                    Color.RED
+            card.addView(text(if (isVideo) "Video URL nahi mili." else "Audio URL nahi mili.", 13f, Color.RED))
+            return
+        }
+
+        val youtubeId = if (isVideo) youtubeVideoId(url) else ""
+        if (youtubeId.isNotBlank()) {
+            val web = WebView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(-1, dp(210))
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.mediaPlaybackRequiresUserGesture = true
+                webViewClient = WebViewClient()
+                setBackgroundColor(Color.BLACK)
+                loadDataWithBaseURL(
+                    "https://www.youtube-nocookie.com",
+                    """<html><body style="margin:0;background:#000"><iframe width="100%" height="100%" src="https://www.youtube-nocookie.com/embed/$youtubeId?playsinline=1&rel=0" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></body></html>""",
+                    "text/html", "UTF-8", null
                 )
-            )
+            }
+            card.addView(web)
             return
         }
 
@@ -744,8 +788,8 @@ class MainActivity : Activity() {
     }
 
     private fun showPromptDialog(item: MediaItem) {
-        val promptText = item.description.ifBlank {
-            "Is post mein prompt text nahi mila."
+        val promptText = item.promptText.ifBlank {
+            item.description.ifBlank { "Is post mein prompt text nahi mila." }
         }
 
         val promptBox = LinearLayout(this).apply {

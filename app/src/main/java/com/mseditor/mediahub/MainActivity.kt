@@ -260,6 +260,7 @@ class MainActivity : Activity() {
         val count = allMediaItems.count {
             belongsToCategory(it, category)
         }
+        section.visibility = if (count > 0) View.VISIBLE else View.GONE
 
         val description = if (count == 0) {
             "Open category to view posts"
@@ -300,8 +301,17 @@ class MainActivity : Activity() {
             val category = item.tag?.toString() ?: ""
 
             if (category.isNotBlank()) {
+                val count = allMediaItems.count {
+                    belongsToCategory(it, category)
+                }
+
+                val card = item as? LinearLayout
+                val innerCard = card?.getChildAt(1) as? LinearLayout
+                val description = innerCard?.getChildAt(1) as? TextView
+                description?.text = "$count posts available"
+
                 item.visibility =
-                    if (query.isBlank() || category.contains(query, true))
+                    if (count > 0 && (query.isBlank() || category.contains(query, true)))
                         View.VISIBLE
                     else View.GONE
             }
@@ -326,6 +336,7 @@ class MainActivity : Activity() {
 
             result.onSuccess { items ->
                 allMediaItems = items
+                filterCategories(search.text.toString())
                 filterMediaItems(search.text.toString())
 
                 Toast.makeText(

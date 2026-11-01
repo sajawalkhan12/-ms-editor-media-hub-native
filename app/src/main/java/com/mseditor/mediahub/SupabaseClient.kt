@@ -4,6 +4,7 @@ package com.mseditor.mediahub
 import android.os.Handler
 import android.os.Looper
 import org.json.JSONArray
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -98,6 +99,96 @@ object SupabaseClient {
             mainHandler.post {
                 callback(result)
             }
+        }
+    }
+
+
+    data class MediaComment(val name: String, val text: String)
+    data class EngagementSummary(val likes: Int, val likedByMe: Boolean, val comments: List<MediaComment>)
+
+    private fun restRequest(method: String, path: String, body: String? = null): String {
+        val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+        val key = SupabaseConfig.SUPABASE_KEY.trim()
+        val connection = URL("$base/rest/v1/$path").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = method
+            connection.connectTimeout = 20000
+            connection.readTimeout = 20000
+            connection.setRequestProperty("apikey", key)
+            connection.setRequestProperty("Authorization", "Bearer $key")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Accept-Profile", "public")
+            connection.setRequestProperty("Content-Profile", "public")
+            if (body != null) {
+                connection.doOutput = true
+                connection.setRequestProperty("Prefer", "return=minimal")
+                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() } ?: ""
+            if (code !in 200..299) throw Exception("Supabase HTTP $code: $response")
+            return response
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    fun getEngagement(mediaId: String, visitorId: String, callback: (Result<EngagementSummary>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val id = URLEncoder.encode(mediaId, "UTF-8")
+                val likesJson = restRequest("GET", "media_likes?select=visitor_id&media_id=eq.$id")
+                val likes = JSONArray(likesJson)
+                var liked = false
+                for (i in 0 until likes.length()) {
+                    if (likes.getJSONObject(i).optString("visitor_id") == visitorId) liked = true
+                }
+                val commentsJson = restRequest("GET", "media_comments?select=visitor_name,comment_text&media_id=eq.$id&order=created_at.asc")
+                val commentsArray = JSONArray(commentsJson)
+                val comments = mutableListOf<MediaComment>()
+                for (i in 0 until commentsArray.length()) {
+                    val row = commentsArray.getJSONObject(i)
+                    comments.add(MediaComment(row.optString("visitor_name", "Visitor"), row.optString("comment_text", "")))
+                }
+                EngagementSummary(likes.length(), liked, comments)
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun toggleLike(mediaId: String, visitorId: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val id = URLEncoder.encode(mediaId, "UTF-8")
+                val who = URLEncoder.encode(visitorId, "UTF-8")
+                val path = "media_likes?select=id&media_id=eq.$id&visitor_id=eq.$who"
+                val existing = JSONArray(restRequest("GET", path))
+                if (existing.length() > 0) {
+                    restRequest("DELETE", "media_likes?media_id=eq.$id&visitor_id=eq.$who")
+                } else {
+                    val body = JSONObject().put("media_id", mediaId).put("visitor_id", visitorId).toString()
+                    restRequest("POST", "media_likes", body)
+                }
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun addComment(mediaId: String, visitorName: String, comment: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val body = JSONObject()
+                    .put("media_id", mediaId)
+                    .put("visitor_name", visitorName.take(60))
+                    .put("comment_text", comment.take(1000))
+                    .toString()
+                restRequest("POST", "media_comments", body)
+                Unit
+            }
+            mainHandler.post { callback(result) }
         }
     }
 

@@ -597,8 +597,8 @@ class MainActivity : Activity() {
                 connection.instanceFollowRedirects = true
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36")
                 connection.setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-                connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
-                connection.setRequestProperty("Authorization", "Bearer ${SupabaseConfig.SUPABASE_KEY.trim()}")
+                // Public Supabase Storage objects are fetched without auth headers,
+                // matching the working website's direct public-media URL request.
 
                 val code = connection.responseCode
                 if (code !in 200..299) throw Exception("Image HTTP $code")
@@ -652,8 +652,6 @@ class MainActivity : Activity() {
                 .setAllowCrossProtocolRedirects(true)
                 .setDefaultRequestProperties(
                     mapOf(
-                        "apikey" to SupabaseConfig.SUPABASE_KEY.trim(),
-                        "Authorization" to "Bearer ${SupabaseConfig.SUPABASE_KEY.trim()}",
                         "Accept" to "*/*"
                     )
                 )

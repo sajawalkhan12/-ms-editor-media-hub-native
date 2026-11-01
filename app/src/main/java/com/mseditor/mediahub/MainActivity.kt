@@ -54,10 +54,10 @@ class MainActivity : Activity() {
     private val categories = listOf(
         "Home",
         "Video Songs",
+        "Video Tutorial",
         "Video Prompt",
         "Image Prompt",
-        "Assets",
-        "Tutorials"
+        "Assets"
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -222,10 +222,10 @@ class MainActivity : Activity() {
 
         val bottomItems = listOf(
             "⌂\nHome",
+            "♫\nVideo Songs",
+            "▷\nVideo Tutorial",
             "✧\nVideo Prompt",
-            "▧\nImage Prompt",
-            "▦\nAssets",
-            "▷\nTutorials"
+            "▧\nImage Prompt"
         )
 
         bottomItems.forEach { item ->
@@ -451,7 +451,7 @@ class MainActivity : Activity() {
                     combined.contains("resource") ||
                     combined.contains("template")
 
-            "tutorials" ->
+            "video tutorial", "tutorials" ->
                 combined.contains("tutorial") ||
                     combined.contains("how to") ||
                     combined.contains("guide")

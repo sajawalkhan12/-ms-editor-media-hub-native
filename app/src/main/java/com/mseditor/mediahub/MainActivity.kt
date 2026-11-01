@@ -528,7 +528,7 @@ class MainActivity : Activity() {
                     }
                 }
 
-                if (isPrompt(item)) {
+                if (isPrompt(item) || belongsToCategory(item, "Video Prompt")) {
                     addViewPromptButton(card, item)
                 }
             }
@@ -544,7 +544,7 @@ class MainActivity : Activity() {
         item: MediaItem
     ) {
         val button = Button(this).apply {
-            text = "View Prompt"
+            text = if (belongsToCategory(item, "Video Prompt")) "View Video Prompt" else "View Prompt"
             isAllCaps = false
             textSize = 14f
             setTextColor(white)
@@ -887,7 +887,7 @@ class MainActivity : Activity() {
     }
 
     private fun showPromptDialog(item: MediaItem) {
-        val promptText = item.description.ifBlank {
+        val promptText = item.promptText.ifBlank { item.description }.ifBlank {
             "Is post mein prompt text nahi mila."
         }
 
@@ -943,7 +943,7 @@ class MainActivity : Activity() {
 
             Toast.makeText(
                 this,
-                "Prompt copied",
+                "Prompt copied successfully!",
                 Toast.LENGTH_SHORT
             ).show()
         }

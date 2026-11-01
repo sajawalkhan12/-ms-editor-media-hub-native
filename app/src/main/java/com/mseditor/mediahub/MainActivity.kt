@@ -504,11 +504,14 @@ class MainActivity : Activity() {
             val poster = mediaUrl(item.posterPath)
 
             if (isImagePrompt(item)) {
-                if (url.isNotBlank()) {
-                    addImage(card, url, 16f / 9f)
-                }
-
-                addViewPromptButton(card, item)
+                    // Website uses poster_path first for Image Prompt cards.
+                    val promptImageUrl = poster.ifBlank { url }
+                    if (promptImageUrl.isNotBlank()) {
+                        addImage(card, promptImageUrl, 16f / 9f)
+                    } else {
+                        card.addView(text("Image file nahi mili. Admin upload mein image/poster attach karein.", 12f, Color.RED))
+                    }
+                    addViewPromptButton(card, item)
 
             } else {
                 if (item.description.isNotBlank()) {
@@ -969,10 +972,13 @@ class MainActivity : Activity() {
                 val poster = mediaUrl(item.posterPath)
 
                 if (isImagePrompt(item)) {
-                    if (url.isNotBlank()) {
-                        addImage(card, url, 16f / 9f)
+                    // Website uses poster_path first for Image Prompt cards.
+                    val promptImageUrl = poster.ifBlank { url }
+                    if (promptImageUrl.isNotBlank()) {
+                        addImage(card, promptImageUrl, 16f / 9f)
+                    } else {
+                        card.addView(text("Image file nahi mili. Admin upload mein image/poster attach karein.", 12f, Color.RED))
                     }
-
                     addViewPromptButton(card, item)
 
                 } else {

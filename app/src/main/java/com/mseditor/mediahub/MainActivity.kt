@@ -585,6 +585,8 @@ class MainActivity : Activity() {
         card: LinearLayout,
         item: MediaItem
     ) {
+        if (belongsToCategory(item, "Video Songs") ||
+            belongsToCategory(item, "Tutorials")) return
         val button = Button(this).apply {
             text = "View Prompt"
             isAllCaps = false

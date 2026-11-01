@@ -5,6 +5,10 @@ import android.app.Activity
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.net.Uri
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
@@ -385,6 +389,11 @@ class MainActivity : Activity() {
     }
 
     private fun mediaKind(item: MediaItem): String {
+        // YouTube links are video embeds even when the database type is "song".
+        if (youtubeVideoId(item.externalUrl.ifBlank { item.storagePath }) != null) {
+            return "video"
+        }
+
         return when (fileExtension(item)) {
             "mp4", "mov", "webm", "m4v", "mkv" -> "video"
             "mp3", "m4a", "wav", "aac", "ogg", "flac" -> "audio"
@@ -510,7 +519,7 @@ class MainActivity : Activity() {
 
                 when (mediaKind(item)) {
                     "audio" -> addNativeMediaPlayer(card, url, false)
-                    "video" -> addNativeMediaPlayer(card, url, true, poster)
+                    "video" -> if (youtubeVideoId(url) != null) addYouTubePlayer(card, url) else addNativeMediaPlayer(card, url, true, poster)
                     "image" -> addImage(card, url, 16f / 9f)
                     else -> {
                         if (url.isNotBlank()) {
@@ -624,6 +633,87 @@ class MainActivity : Activity() {
                 connection?.disconnect()
             }
         }
+    }
+
+    private fun youtubeVideoId(url: String): String? {
+        if (url.isBlank()) return null
+
+        return try {
+            val uri = Uri.parse(url.trim())
+            val host = uri.host?.lowercase() ?: return null
+            val pathParts = uri.pathSegments
+
+            val candidate = when {
+                host == "youtu.be" -> pathParts.firstOrNull()
+                host == "youtube.com" ||
+                    host.endsWith(".youtube.com") ||
+                    host == "youtube-nocookie.com" ||
+                    host.endsWith(".youtube-nocookie.com") -> {
+                    when {
+                        uri.path.equals("/watch", true) -> uri.getQueryParameter("v")
+                        pathParts.size >= 2 &&
+                            pathParts[0] in listOf("embed", "shorts", "live", "v") ->
+                            pathParts[1]
+                        else -> null
+                    }
+                }
+                else -> null
+            }
+
+            candidate?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{11}")) }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun addYouTubePlayer(card: LinearLayout, url: String) {
+        val videoId = youtubeVideoId(url)
+        if (videoId == null) {
+            card.addView(text("YouTube link sahi nahi hai.", 13f, Color.RED))
+            return
+        }
+
+        val webView = WebView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, dp(220))
+            setBackgroundColor(Color.BLACK)
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.mediaPlaybackRequiresUserGesture = true
+            settings.loadsImagesAutomatically = true
+            webViewClient = WebViewClient()
+            webChromeClient = WebChromeClient()
+        }
+
+        val html = """
+            <!doctype html>
+            <html>
+            <head>
+              <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+              <style>
+                html, body { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; }
+                iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:0; }
+              </style>
+            </head>
+            <body>
+              <iframe
+                src="https://www.youtube-nocookie.com/embed/$videoId?playsinline=1&rel=0"
+                title="YouTube video player"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerpolicy="strict-origin-when-cross-origin"
+                allowfullscreen>
+              </iframe>
+            </body>
+            </html>
+        """.trimIndent()
+
+        card.addView(webView)
+        webView.loadDataWithBaseURL(
+            "https://www.youtube-nocookie.com",
+            html,
+            "text/html",
+            "UTF-8",
+            null
+        )
     }
 
     private fun addNativeMediaPlayer(
@@ -891,7 +981,7 @@ class MainActivity : Activity() {
                     }
 
                     when (mediaKind(item)) {
-                        "video" -> addNativeMediaPlayer(card, url, true, poster)
+                        "video" -> if (youtubeVideoId(url) != null) addYouTubePlayer(card, url) else addNativeMediaPlayer(card, url, true, poster)
                         "audio" -> addNativeMediaPlayer(card, url, false)
                         "image" -> addImage(card, url, 16f / 9f)
                         else -> {

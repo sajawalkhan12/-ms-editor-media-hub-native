@@ -200,8 +200,6 @@ class MainActivity : Activity() {
 
         content.addView(postsContainer)
 
-        categories.drop(1).forEach { addCategorySection(it) }
-
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(
                 s: CharSequence?, start: Int, count: Int, after: Int
@@ -210,7 +208,6 @@ class MainActivity : Activity() {
             override fun onTextChanged(
                 s: CharSequence?, start: Int, before: Int, count: Int
             ) {
-                filterCategories(s?.toString() ?: "")
                 filterMediaItems(s?.toString() ?: "")
             }
 

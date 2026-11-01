@@ -719,21 +719,70 @@ class MainActivity : Activity() {
         )
     }
 
+    // Use Android WebView's HTML5 video element for hosted MP4 files.
+    // This mirrors the working website player and avoids ExoPlayer HTTP range incompatibilities.
+    private fun addHtml5VideoPlayer(
+        card: LinearLayout,
+        url: String,
+        posterUrl: String = ""
+    ) {
+        if (url.isBlank()) {
+            card.addView(text("Video file URL nahi mili.", 13f, Color.RED))
+            return
+        }
+
+        val safeUrl = android.text.TextUtils.htmlEncode(url)
+        val safePoster = if (posterUrl.isNotBlank())
+            "poster=\"" + android.text.TextUtils.htmlEncode(posterUrl) + "\""
+        else ""
+
+        val webView = WebView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, dp(220))
+            setBackgroundColor(Color.BLACK)
+            settings.javaScriptEnabled = false
+            settings.domStorageEnabled = true
+            settings.mediaPlaybackRequiresUserGesture = true
+            settings.loadsImagesAutomatically = true
+            webViewClient = WebViewClient()
+            webChromeClient = WebChromeClient()
+        }
+
+        val html = """
+            <!doctype html>
+            <html><head>
+              <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+              <style>html,body{margin:0;padding:0;width:100%;height:100%;background:#000}video{width:100%;height:100%;object-fit:contain;background:#000}</style>
+            </head><body>
+              <video controls playsinline preload="metadata" $safePoster>
+                <source src="$safeUrl" type="video/mp4">
+                Your device cannot play this video.
+              </video>
+            </body></html>
+        """.trimIndent()
+
+        card.addView(webView)
+        webView.loadDataWithBaseURL(
+            "https://mgjrrgsbddppffnvnmgs.supabase.co/",
+            html,
+            "text/html",
+            "UTF-8",
+            null
+        )
+    }
+
     private fun addNativeMediaPlayer(
         card: LinearLayout,
         url: String,
         isVideo: Boolean,
         posterUrl: String = ""
     ) {
+        if (isVideo) {
+            addHtml5VideoPlayer(card, url, posterUrl)
+            return
+        }
+
         if (url.isBlank()) {
-            card.addView(
-                text(
-                    if (isVideo) "Video file URL nahi mili."
-                    else "Audio file URL nahi mili.",
-                    13f,
-                    Color.RED
-                )
-            )
+            card.addView(text("Audio file URL nahi mili.", 13f, Color.RED))
             return
         }
 

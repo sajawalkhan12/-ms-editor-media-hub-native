@@ -196,7 +196,6 @@ class MainActivity : Activity() {
 
         content.addView(postsContainer)
 
-        categories.drop(1).forEach { addCategorySection(it) }
 
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(
@@ -206,7 +205,6 @@ class MainActivity : Activity() {
             override fun onTextChanged(
                 s: CharSequence?, start: Int, before: Int, count: Int
             ) {
-                filterCategories(s?.toString() ?: "")
                 filterMediaItems(s?.toString() ?: "")
             }
 
@@ -336,7 +334,6 @@ class MainActivity : Activity() {
 
             result.onSuccess { items ->
                 allMediaItems = items
-                filterCategories(search.text.toString())
                 filterMediaItems(search.text.toString())
 
                 Toast.makeText(

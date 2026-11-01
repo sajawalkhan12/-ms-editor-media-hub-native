@@ -902,6 +902,8 @@ class MainActivity : Activity() {
                     }
                 }
 
+                addEngagementControls(card, item, url)
+
                 val params = LinearLayout.LayoutParams(-1, -2)
                 params.setMargins(0, 0, 0, dp(12))
                 list.addView(card, params)

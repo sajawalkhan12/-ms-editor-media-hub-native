@@ -209,7 +209,13 @@ object SupabaseClient {
                     id = item.optString("id", ""),
                     title = item.optString("title", ""),
                     description = item.optString("description", ""),
-                    promptText = item.optString("prompt_text", ""),
+                    promptText = item.optString("prompt_text", "").ifBlank {
+                        item.optString("prompt", "").ifBlank {
+                            item.optString("prompt_content", "").ifBlank {
+                                item.optString("promptText", "")
+                            }
+                        }
+                    },
                     mediaType = item.optString("media_type", ""),
                     storagePath = item.optString("storage_path", ""),
                     externalUrl = item.optString("external_url", ""),

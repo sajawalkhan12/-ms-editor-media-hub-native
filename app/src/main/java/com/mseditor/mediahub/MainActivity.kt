@@ -202,7 +202,7 @@ class MainActivity : Activity() {
 
         content.addView(postsContainer)
 
-        categories.drop(1).forEach { addCategorySection(it) }
+        // Category tiles are created only after media has loaded, so counts are accurate.
 
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(
@@ -295,6 +295,18 @@ class MainActivity : Activity() {
         content.addView(section, params)
     }
 
+    private fun rebuildCategorySections() {
+        if (!::content.isInitialized) return
+        // Keep the Latest Posts heading and post list; rebuild category tiles from loaded data.
+        val remove = mutableListOf<View>()
+        for (i in 0 until content.childCount) {
+            val child = content.getChildAt(i)
+            if (child.tag?.toString() in categories.drop(1)) remove.add(child)
+        }
+        remove.forEach { content.removeView(it) }
+        categories.drop(1).forEach { addCategorySection(it) }
+    }
+
     private fun filterCategories(query: String) {
         if (!::content.isInitialized) return
 
@@ -329,6 +341,7 @@ class MainActivity : Activity() {
 
             result.onSuccess { items ->
                 allMediaItems = items
+                rebuildCategorySections()
                 filterMediaItems(search.text.toString())
 
                 Toast.makeText(

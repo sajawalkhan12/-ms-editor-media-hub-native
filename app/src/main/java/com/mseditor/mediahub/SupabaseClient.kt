@@ -193,6 +193,13 @@ object SupabaseClient {
         }
     }
 
+    private fun cleanJsonString(item: JSONObject, key: String): String {
+        val value = item.opt(key)
+        if (value == null || value == JSONObject.NULL) return ""
+        val text = value.toString().trim()
+        return if (text.equals("null", ignoreCase = true)) "" else text
+    }
+
     private fun parseMediaItems(
         response: String
     ): List<MediaItem> {
@@ -203,25 +210,29 @@ object SupabaseClient {
         for (i in 0 until jsonArray.length()) {
 
             val item = jsonArray.getJSONObject(i)
+            val promptText = cleanJsonString(item, "prompt_text")
+                .ifBlank {
+                    cleanJsonString(item, "prompt")
+                }
+                .ifBlank {
+                    cleanJsonString(item, "prompt_content")
+                }
+                .ifBlank {
+                    cleanJsonString(item, "promptText")
+                }
 
             items.add(
                 MediaItem(
-                    id = item.optString("id", ""),
-                    title = item.optString("title", ""),
-                    description = item.optString("description", ""),
-                    promptText = item.optString("prompt_text", "").ifBlank {
-                        item.optString("prompt", "").ifBlank {
-                            item.optString("prompt_content", "").ifBlank {
-                                item.optString("promptText", "")
-                            }
-                        }
-                    },
-                    mediaType = item.optString("media_type", ""),
-                    storagePath = item.optString("storage_path", ""),
-                    externalUrl = item.optString("external_url", ""),
-                    posterPath = item.optString("poster_path", ""),
-                    createdBy = item.optString("created_by", ""),
-                    createdAt = item.optString("created_at", "")
+                    id = cleanJsonString(item, "id"),
+                    title = cleanJsonString(item, "title"),
+                    description = cleanJsonString(item, "description"),
+                    promptText = promptText,
+                    mediaType = cleanJsonString(item, "media_type"),
+                    storagePath = cleanJsonString(item, "storage_path"),
+                    externalUrl = cleanJsonString(item, "external_url"),
+                    posterPath = cleanJsonString(item, "poster_path"),
+                    createdBy = cleanJsonString(item, "created_by"),
+                    createdAt = cleanJsonString(item, "created_at")
                 )
             )
         }

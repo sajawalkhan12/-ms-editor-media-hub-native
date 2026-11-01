@@ -887,9 +887,10 @@ class MainActivity : Activity() {
     }
 
     private fun showPromptDialog(item: MediaItem) {
-        val promptText = item.promptText.ifBlank { item.description }.ifBlank {
-            "Is post mein prompt text nahi mila."
-        }
+        val promptText = sequenceOf(item.promptText, item.description)
+            .map { it.trim() }
+            .firstOrNull { it.isNotEmpty() && !it.equals("null", true) }
+            ?: "Is post mein prompt text nahi mila."
 
         val promptBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

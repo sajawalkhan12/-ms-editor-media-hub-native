@@ -118,7 +118,7 @@ object SupabaseClient {
                     id = item.optString("id", ""),
                     title = item.optString("title", ""),
                     description = item.optString("description", ""),
-                    promptText = item.optString("prompt_text", ""),
+                    promptText = item.optString("prompt_text", "").takeUnless { it.equals("null", true) }?.trim().orEmpty(),
                     mediaType = item.optString("media_type", ""),
                     storagePath = item.optString("storage_path", ""),
                     externalUrl = item.optString("external_url", ""),

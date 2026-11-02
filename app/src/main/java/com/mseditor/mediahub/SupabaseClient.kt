@@ -465,6 +465,113 @@ object SupabaseClient {
         }
     }
 
+
+    data class AppearanceSettings(val logoUrl: String = "", val coverUrl: String = "")
+
+    private fun publicStorageRequest(path: String): String {
+        val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+        val encoded = path.split("/").joinToString("/") {
+            URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+        }
+        val connection = URL("$base/storage/v1/object/public/media/$encoded").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 20000
+            connection.readTimeout = 20000
+            connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+            val code = connection.responseCode
+            if (code == 404) return "{}"
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val raw = stream?.bufferedReader()?.use { it.readText() } ?: "{}"
+            if (code !in 200..299) throw Exception("Appearance read HTTP $code: $raw")
+            return raw
+        } finally { connection.disconnect() }
+    }
+
+    fun getAppearanceSettings(callback: (Result<AppearanceSettings>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val json = JSONObject(publicStorageRequest("appearance/site-settings.json"))
+                AppearanceSettings(json.optString("logoUrl"), json.optString("coverUrl"))
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun updateAppearanceSetting(
+        context: android.content.Context,
+        session: AdminSession,
+        imageUri: android.net.Uri,
+        kind: String,
+        callback: (Result<AppearanceSettings>) -> Unit
+    ) {
+        executor.execute {
+            val result = runCatching {
+                require(kind == "logoUrl" || kind == "coverUrl") { "Appearance type valid nahi hai." }
+                require(session.accessToken.isNotBlank()) { "Admin session expire ho gayi. Dobara login karein." }
+                val resolver = context.contentResolver
+                val mime = resolver.getType(imageUri) ?: "image/jpeg"
+                require(mime.startsWith("image/")) { "Sirf image file select karein." }
+                val ext = when (mime.lowercase()) {
+                    "image/png" -> "png"
+                    "image/webp" -> "webp"
+                    "image/gif" -> "gif"
+                    else -> "jpg"
+                }
+                val objectPath = "appearance/${if (kind == "logoUrl") "logo" else "cover"}-${System.currentTimeMillis()}.$ext"
+                val encoded = objectPath.split("/").joinToString("/") {
+                    URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                }
+                val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                val upload = URL("$base/storage/v1/object/media/$encoded").openConnection() as HttpURLConnection
+                try {
+                    upload.requestMethod = "POST"
+                    upload.connectTimeout = 30000
+                    upload.readTimeout = 120000
+                    upload.doOutput = true
+                    upload.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    upload.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                    upload.setRequestProperty("Content-Type", mime)
+                    upload.setRequestProperty("x-upsert", "true")
+                    resolver.openInputStream(imageUri)?.use { input ->
+                        upload.outputStream.use { output -> input.copyTo(output, 64 * 1024) }
+                    } ?: throw Exception("Image read nahi ho saki.")
+                    val code = upload.responseCode
+                    val raw = (if (code in 200..299) upload.inputStream else upload.errorStream)
+                        ?.bufferedReader()?.use { it.readText() } ?: ""
+                    if (code !in 200..299) throw Exception("Image upload HTTP $code: $raw")
+                } finally { upload.disconnect() }
+
+                // Keep the other appearance setting and any existing JSON fields intact.
+                val settings = JSONObject(publicStorageRequest("appearance/site-settings.json"))
+                val publicUrl = "$base/storage/v1/object/public/media/$encoded"
+                settings.put(kind, publicUrl)
+                val jsonPath = "appearance/site-settings.json"
+                val jsonEncoded = jsonPath.split("/").joinToString("/") {
+                    URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                }
+                val save = URL("$base/storage/v1/object/media/$jsonEncoded").openConnection() as HttpURLConnection
+                try {
+                    save.requestMethod = "POST"
+                    save.connectTimeout = 25000
+                    save.readTimeout = 25000
+                    save.doOutput = true
+                    save.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    save.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                    save.setRequestProperty("Content-Type", "application/json")
+                    save.setRequestProperty("x-upsert", "true")
+                    save.outputStream.use { it.write(settings.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = save.responseCode
+                    val raw = (if (code in 200..299) save.inputStream else save.errorStream)
+                        ?.bufferedReader()?.use { it.readText() } ?: ""
+                    if (code !in 200..299) throw Exception("Settings save HTTP $code: $raw")
+                } finally { save.disconnect() }
+                AppearanceSettings(settings.optString("logoUrl"), settings.optString("coverUrl"))
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
     fun getPublicMediaUrl(path: String): String {
 
         val cleanPath = path.trim()

@@ -228,12 +228,12 @@ class MainActivity : Activity() {
 
         // Fixed navigation follows the approved PDF; Assets remains visible even when empty.
         val bottomItems = listOf(
-            "⌂\\nHome",
-            "♫\\nVideo Songs",
-            "✧\\nVideo Prompt",
-            "▧\\nImage Prompt",
-            "▦\\nAssets",
-            "▷\\nTutorials"
+            "⌂\nHome",
+            "♫\nVideo Songs",
+            "✧\nVideo Prompt",
+            "▧\nImage Prompt",
+            "▦\nAssets",
+            "▷\nTutorials"
         )
 
         bottomItems.forEach { item ->

@@ -380,16 +380,17 @@ object SupabaseClient {
     fun uploadMedia(
         context: android.content.Context,
         session: AdminSession,
-        mediaUri: android.net.Uri,
+        mediaUri: android.net.Uri?,
         posterUri: android.net.Uri?,
         title: String,
         description: String,
         mediaType: String,
+        promptText: String,
         callback: (Result<Unit>) -> Unit
     ) {
         executor.execute {
             val result = runCatching {
-                require(mediaType in listOf("movie", "trailer", "image", "audio")) { "Category valid nahi hai." }
+                require(mediaType in listOf("movie", "trailer", "image", "audio", "tutorial", "song", "video_prompt", "image_prompt")) { "Category valid nahi hai." }
                 val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
                 val key = SupabaseConfig.SUPABASE_KEY.trim()
                 fun uploadObject(uri: android.net.Uri, folder: String): String {
@@ -426,8 +427,11 @@ object SupabaseClient {
                     } finally { connection.disconnect() }
                     return objectPath
                 }
-                val mediaPath = uploadObject(mediaUri, "media")
+                val mediaPath = if (mediaUri != null) uploadObject(mediaUri, "media") else ""
                 val posterPath = if (posterUri != null) uploadObject(posterUri, "posters") else ""
+                require(mediaPath.isNotBlank() || promptText.isNotBlank() || description.isNotBlank()) {
+                    "Media file ya prompt/description zaroori hai."
+                }
                 val body = JSONObject()
                     .put("title", title)
                     .put("description", description)
@@ -435,6 +439,7 @@ object SupabaseClient {
                     .put("storage_path", mediaPath)
                     .put("external_url", "")
                     .put("poster_path", posterPath)
+                    .put("prompt_text", promptText)
                     .put("created_by", session.userId)
                     .toString()
                 val insert = URL("$base/rest/v1/media_items").openConnection() as HttpURLConnection

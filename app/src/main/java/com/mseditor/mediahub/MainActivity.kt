@@ -56,6 +56,7 @@ class MainActivity : Activity() {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var selectedCategory = "Home"
+    private var adminSession: SupabaseClient.AdminSession? = null
 
     private val categories = listOf(
         "Home",
@@ -282,16 +283,20 @@ class MainActivity : Activity() {
                 if (category == "Home") showHome() else showCategory(category)
             }
         }
+        section("ACCOUNT")
+        if (adminSession == null) {
+            item("Account / Admin Login") { showAdminLogin() }
+        } else {
+            item("Open Admin Page") { showAdminPage() }
+            item("Admin Sign Out") {
+                adminSession = null
+                Toast.makeText(this, "Admin sign out ho gaya.", Toast.LENGTH_SHORT).show()
+                showNavigationMenu()
+            }
+        }
         section("ADMIN & APPEARANCE")
-        item("Admin Login") {
-            Toast.makeText(this, "Admin Login is available on the connected website.", Toast.LENGTH_LONG).show()
-        }
-        item("Cover Image & Logo") {
-            Toast.makeText(this, "Cover and Logo settings are available on the connected website.", Toast.LENGTH_LONG).show()
-        }
-        item("Upload Media") {
-            Toast.makeText(this, "Admin media upload is available on the connected website.", Toast.LENGTH_LONG).show()
-        }
+        item("Cover Image & Logo") { openAdminWebsite("Admin appearance settings") }
+        item("Upload Media") { openAdminWebsite("Admin media upload") }
         section("APP")
         item("Back to Home") { showHome() }
         item("Exit App") { finish() }
@@ -303,6 +308,84 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun showAdminLogin() {
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(12), dp(18), dp(8))
+            setBackgroundColor(panel)
+        }
+        val email = EditText(this).apply {
+            hint = "Admin email"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            setTextColor(white)
+            setHintTextColor(Color.LTGRAY)
+        }
+        val password = EditText(this).apply {
+            hint = "Password"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setTextColor(white)
+            setHintTextColor(Color.LTGRAY)
+        }
+        form.addView(text("Sign in with your registered admin account.", 13f, gold))
+        form.addView(email)
+        form.addView(password)
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("MS Media Hub · Admin Login")
+            .setView(form)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Login", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val enteredEmail = email.text.toString().trim()
+                val enteredPassword = password.text.toString()
+                if (enteredEmail.isBlank()) { email.error = "Email enter karein"; return@setOnClickListener }
+                if (enteredPassword.isBlank()) { password.error = "Password enter karein"; return@setOnClickListener }
+                val loginButton = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                loginButton.isEnabled = false
+                loginButton.text = "Checking..."
+                SupabaseClient.signInAndCheckAdmin(enteredEmail, enteredPassword) { result ->
+                    if (isFinishing || isDestroyed) return@signInAndCheckAdmin
+                    loginButton.isEnabled = true
+                    loginButton.text = "Login"
+                    result.onSuccess { session ->
+                        adminSession = session
+                        dialog.dismiss()
+                        Toast.makeText(this, "Admin verification successful.", Toast.LENGTH_SHORT).show()
+                        showAdminPage()
+                    }.onFailure { error ->
+                        Toast.makeText(this, error.message ?: "Admin login failed.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showAdminPage() {
+        if (adminSession == null) { showAdminLogin(); return }
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(20), dp(18), dp(18))
+            setBackgroundColor(black)
+        }
+        page.addView(text("ADMIN DASHBOARD", 23f, emerald, true))
+        page.addView(text("Verified admin account", 14f, gold).apply { setPadding(0, dp(8), 0, dp(18)) })
+        page.addView(text("Your account passed Supabase email/password sign-in and the is_media_admin permission check.", 14f, white))
+        page.addView(actionButton("Open Full Admin Tools (Website)") { openAdminWebsite("Admin tools") }, LinearLayout.LayoutParams(-1, dp(50)))
+        val signOut = actionButton("Admin Sign Out") { adminSession = null; showHome(); Toast.makeText(this, "Admin sign out ho gaya.", Toast.LENGTH_SHORT).show() }
+        val signParams = LinearLayout.LayoutParams(-1, dp(50)); signParams.topMargin = dp(10); page.addView(signOut, signParams)
+        val back = actionButton("Back to Home") { showHome() }
+        val backParams = LinearLayout.LayoutParams(-1, dp(50)); backParams.topMargin = dp(10); page.addView(back, backParams)
+        setContentView(page)
+    }
+
+    private fun openAdminWebsite(label: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://sajawalkhan12.github.io/ms-editor-media-hub-/"))
+        try { startActivity(intent) } catch (_: Exception) { Toast.makeText(this, "$label open nahi ho saka.", Toast.LENGTH_LONG).show() }
+    }
     private fun addCategorySection(category: String) {
         val count = allMediaItems.count { belongsToCategory(it, category) }
         // Never create a category card when it has no matching posts.

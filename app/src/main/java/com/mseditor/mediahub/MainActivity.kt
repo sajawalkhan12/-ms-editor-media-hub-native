@@ -59,6 +59,9 @@ class MainActivity : Activity() {
     private var adminSession: SupabaseClient.AdminSession? = null
     private val PICK_MEDIA_FILE = 4101
     private val PICK_POSTER_FILE = 4102
+    private val PICK_APPEARANCE_IMAGE = 4103
+    private var selectedAppearanceKind = "logoUrl"
+    private var appearanceSettings = SupabaseClient.AppearanceSettings()
     private var selectedUploadUri: Uri? = null
     private var selectedPosterUri: Uri? = null
 
@@ -73,6 +76,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SupabaseClient.getAppearanceSettings { result -> result.onSuccess { appearanceSettings = it; if (!isFinishing && !isDestroyed && selectedCategory == "Home") showHome() } }
         showHome()
     }
 
@@ -128,13 +132,20 @@ class MainActivity : Activity() {
             setBackgroundColor(panel)
         }
 
+        val logo = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = rounded(black, emerald)
+        }
+        header.addView(logo, LinearLayout.LayoutParams(dp(54), dp(54)))
+        loadAppearanceImage(appearanceSettings.logoUrl, logo)
+
         val brand = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(11) }
         }
-
-        brand.addView(text("MS EDITOR MEDIA HUB", 19f, emerald, true))
-        brand.addView(text("Video Songs • Tutorials • Prompts", 12f, gold))
+        brand.addView(text("MS Editor Media Hub", 18f, emerald, true))
+        brand.addView(text("Video Songs • Tutorials • Prompts", 11f, Color.rgb(70, 220, 235)))
         header.addView(brand)
 
         val settings = text("⚙", 27f, gold, true).apply {
@@ -145,6 +156,11 @@ class MainActivity : Activity() {
 
         header.addView(settings)
         root.addView(header)
+        if (appearanceSettings.coverUrl.isNotBlank()) {
+            val cover = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+            root.addView(cover, LinearLayout.LayoutParams(-1, dp(138)))
+            loadAppearanceImage(appearanceSettings.coverUrl, cover)
+        }
 
         val searchRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -299,7 +315,7 @@ class MainActivity : Activity() {
             }
         }
         section("ADMIN & APPEARANCE")
-        item("Cover Image & Logo") { openAdminWebsite("Admin appearance settings") }
+        item("Cover Image & Logo") { showAppearanceSettings() }
         item("Upload Media") { showUploadForm() }
         section("APP")
         item("Back to Home") { showHome() }
@@ -378,6 +394,7 @@ class MainActivity : Activity() {
         page.addView(text("ADMIN DASHBOARD", 23f, emerald, true))
         page.addView(text("Verified admin account", 14f, gold).apply { setPadding(0, dp(8), 0, dp(18)) })
         page.addView(text("Your account passed Supabase email/password sign-in and the is_media_admin permission check.", 14f, white))
+        page.addView(actionButton("Logo & Cover Image Settings") { showAppearanceSettings() }, LinearLayout.LayoutParams(-1, dp(50)))
         page.addView(actionButton("＋ Upload Media (In App)") { showUploadForm() }, LinearLayout.LayoutParams(-1, dp(50)))
         val webTools = actionButton("Open Full Admin Tools (Website)") { openAdminWebsite("Admin tools") }
         val webParams = LinearLayout.LayoutParams(-1, dp(50))
@@ -522,7 +539,68 @@ class MainActivity : Activity() {
                 selectedPosterUri = uri
                 Toast.makeText(this, "Poster select ho gaya.", Toast.LENGTH_SHORT).show()
             }
+            PICK_APPEARANCE_IMAGE -> {
+                val session = adminSession ?: run { showAdminLogin(); return }
+                val kind = selectedAppearanceKind
+                Toast.makeText(this, "Image upload ho rahi hai...", Toast.LENGTH_SHORT).show()
+                SupabaseClient.updateAppearanceSetting(this, session, uri, kind) { result ->
+                    result.onSuccess {
+                        appearanceSettings = it
+                        Toast.makeText(this, "Image website aur app dono par update ho gayi.", Toast.LENGTH_LONG).show()
+                        showAppearanceSettings()
+                    }.onFailure {
+                        Toast.makeText(this, it.message ?: "Image update nahi ho saki.", Toast.LENGTH_LONG).show()
+                        showAppearanceSettings()
+                    }
+                }
+            }
         }
+    }
+
+
+    private fun loadAppearanceImage(imageUrl: String, target: ImageView) {
+        if (imageUrl.isBlank()) return
+        imageExecutor.execute {
+            val bitmap = runCatching {
+                val connection = URL(imageUrl).openConnection() as HttpURLConnection
+                try {
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.inputStream.use { BitmapFactory.decodeStream(it) }
+                } finally { connection.disconnect() }
+            }.getOrNull()
+            if (bitmap != null) mainHandler.post { if (!isFinishing && !isDestroyed) target.setImageBitmap(bitmap) }
+        }
+    }
+
+    private fun showAppearanceSettings() {
+        if (adminSession == null) {
+            Toast.makeText(this, "Logo aur cover badalne ke liye Admin Login karein.", Toast.LENGTH_LONG).show()
+            showAdminLogin()
+            return
+        }
+        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(18), dp(18), dp(22)); setBackgroundColor(black) }
+        page.addView(text("LOGO & COVER IMAGE", 22f, emerald, true))
+        page.addView(text("Gallery se image choose karein. Website aur app dono par shared rahegi.", 13f, gold).apply { setPadding(0, dp(8), 0, dp(16)) })
+        val logoPreview = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = rounded(panel, emerald) }
+        page.addView(text("App Logo", 15f, white, true))
+        page.addView(logoPreview, LinearLayout.LayoutParams(dp(92), dp(92)).apply { topMargin = dp(8); bottomMargin = dp(8) })
+        loadAppearanceImage(appearanceSettings.logoUrl, logoPreview)
+        page.addView(actionButton("Choose Logo from Gallery") {
+            selectedAppearanceKind = "logoUrl"
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "image/*" }, PICK_APPEARANCE_IMAGE)
+        }, LinearLayout.LayoutParams(-1, dp(50)))
+        val coverPreview = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = rounded(panel, emerald) }
+        page.addView(text("Cover Image", 15f, white, true).apply { setPadding(0, dp(12), 0, dp(4)) })
+        page.addView(coverPreview, LinearLayout.LayoutParams(-1, dp(130)).apply { topMargin = dp(8); bottomMargin = dp(8) })
+        loadAppearanceImage(appearanceSettings.coverUrl, coverPreview)
+        page.addView(actionButton("Choose Cover from Gallery") {
+            selectedAppearanceKind = "coverUrl"
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "image/*" }, PICK_APPEARANCE_IMAGE)
+        }, LinearLayout.LayoutParams(-1, dp(50)))
+        page.addView(actionButton("Back to Admin Dashboard") { showAdminPage() }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(18) })
+        page.addView(actionButton("Back to Home") { showHome() }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(8) })
+        setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
     }
 
     private fun openAdminWebsite(label: String) {

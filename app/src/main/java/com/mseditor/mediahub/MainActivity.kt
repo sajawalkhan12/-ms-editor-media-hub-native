@@ -135,7 +135,7 @@ class MainActivity : Activity() {
         val settings = text("⚙", 27f, gold, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(5), dp(12), dp(5))
-            setOnClickListener { showCategory("Settings") }
+            setOnClickListener { showNavigationMenu() }
         }
 
         header.addView(settings)
@@ -226,24 +226,15 @@ class MainActivity : Activity() {
             setPadding(2, dp(8), 2, dp(8))
         }
 
-        // Show only navigation categories that currently contain posts.
-        // Home is always available; empty category tabs were the recurring blank boxes.
-        val bottomItems = buildList {
-            add("⌂\nHome")
-            categories.drop(1).forEach { category ->
-                if (allMediaItems.any { belongsToCategory(it, category) }) {
-                    val icon = when (category) {
-                        "Video Songs" -> "♫"
-                        "Video Prompt" -> "✧"
-                        "Image Prompt" -> "▧"
-                        "Assets" -> "▦"
-                        "Tutorials" -> "▷"
-                        else -> "•"
-                    }
-                    add("$icon\n$category")
-                }
-            }
-        }
+        // Fixed navigation follows the approved PDF; Assets remains visible even when empty.
+        val bottomItems = listOf(
+            "⌂\\nHome",
+            "♫\\nVideo Songs",
+            "✧\\nVideo Prompt",
+            "▧\\nImage Prompt",
+            "▦\\nAssets",
+            "▷\\nTutorials"
+        )
 
         bottomItems.forEach { item ->
             val tab = text(item, 11f, emerald, true).apply {
@@ -262,6 +253,54 @@ class MainActivity : Activity() {
         root.addView(bottom)
         setContentView(root)
         loadMediaItems()
+    }
+
+    private fun showNavigationMenu() {
+        val menu = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(12), dp(18), dp(12))
+            setBackgroundColor(panel)
+        }
+        fun section(title: String) {
+            menu.addView(text(title, 13f, gold, true).apply {
+                setPadding(0, dp(12), 0, dp(5))
+            })
+        }
+        fun item(label: String, action: () -> Unit) {
+            val row = text(label, 16f, white, true).apply {
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = rounded(black)
+                setOnClickListener { action() }
+            }
+            val params = LinearLayout.LayoutParams(-1, -2)
+            params.setMargins(0, dp(3), 0, dp(3))
+            menu.addView(row, params)
+        }
+        section("CATEGORIES")
+        categories.forEach { category ->
+            item(category) {
+                if (category == "Home") showHome() else showCategory(category)
+            }
+        }
+        section("ADMIN & APPEARANCE")
+        item("Admin Login") {
+            Toast.makeText(this, "Admin Login is available on the connected website.", Toast.LENGTH_LONG).show()
+        }
+        item("Cover Image & Logo") {
+            Toast.makeText(this, "Cover and Logo settings are available on the connected website.", Toast.LENGTH_LONG).show()
+        }
+        item("Upload Media") {
+            Toast.makeText(this, "Admin media upload is available on the connected website.", Toast.LENGTH_LONG).show()
+        }
+        section("APP")
+        item("Back to Home") { showHome() }
+        item("Exit App") { finish() }
+        val scroll = ScrollView(this).apply { addView(menu) }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Navigation")
+            .setView(scroll)
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun addCategorySection(category: String) {

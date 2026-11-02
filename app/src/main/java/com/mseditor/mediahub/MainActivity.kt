@@ -65,10 +65,10 @@ class MainActivity : Activity() {
     private val categories = listOf(
         "Home",
         "Video Songs",
+        "Video Tutorial",
         "Video Prompt",
         "Image Prompt",
-        "Assets",
-        "Tutorials"
+        "Presets & Assets"
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -235,10 +235,10 @@ class MainActivity : Activity() {
         val bottomItems = listOf(
             "⌂\nHome",
             "♫\nVideo Songs",
+            "▷\nVideo Tutorial",
             "✧\nVideo Prompt",
             "▧\nImage Prompt",
-            "▦\nAssets",
-            "▷\nTutorials"
+            "▦\nPresets & Assets"
         )
 
         bottomItems.forEach { item ->
@@ -835,6 +835,32 @@ class MainActivity : Activity() {
             }
 
             addEngagementControls(card, item, url)
+            if (adminSession != null) {
+                val deleteButton = actionButton("🗑 Delete Post") {
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle("Delete post?")
+                        .setMessage("Yeh post website aur app dono se delete hogi. Kya aap sure hain?")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Delete") { _, _ ->
+                            val session = adminSession
+                            if (session == null) {
+                                Toast.makeText(this, "Admin dobara login karein.", Toast.LENGTH_LONG).show()
+                            } else {
+                                SupabaseClient.deleteMedia(session, item) { result ->
+                                    result.onSuccess {
+                                        Toast.makeText(this, "Post delete ho gayi.", Toast.LENGTH_SHORT).show()
+                                        loadMediaItems()
+                                    }.onFailure {
+                                        Toast.makeText(this, "Delete failed: ${it.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        }.show()
+                }
+                val deleteParams = LinearLayout.LayoutParams(-1, dp(44))
+                deleteParams.topMargin = dp(6)
+                card.addView(deleteButton, deleteParams)
+            }
 
             val params = LinearLayout.LayoutParams(-1, -2)
             params.setMargins(0, 0, 0, dp(12))
@@ -1449,11 +1475,7 @@ class MainActivity : Activity() {
             setPadding(dp(18), dp(12), dp(18), dp(8))
             setBackgroundColor(panel)
         }
-        val list = TextView(this).apply {
-            textSize = 14f
-            setTextColor(white)
-            setPadding(0, 0, 0, dp(10))
-        }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val name = EditText(this).apply {
             hint = "Aapka naam (optional)"
             setTextColor(white)
@@ -1466,7 +1488,7 @@ class MainActivity : Activity() {
             setHintTextColor(Color.LTGRAY)
             minLines = 2
         }
-        layout.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, dp(190)))
+        layout.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, dp(220)))
         layout.addView(name)
         layout.addView(message)
         val dialog = android.app.AlertDialog.Builder(this)
@@ -1475,15 +1497,58 @@ class MainActivity : Activity() {
             .setNegativeButton("Close", null)
             .setPositiveButton("Post", null)
             .create()
+
         fun refreshComments() {
             SupabaseClient.getEngagement(item.id, visitorId()) { result ->
                 result.onSuccess { data ->
-                    list.text = if (data.comments.isEmpty()) "Abhi koi comment nahi." else
-                        data.comments.joinToString("\n\n") { "${it.name}: ${it.text}" }
+                    list.removeAllViews()
+                    if (data.comments.isEmpty()) {
+                        list.addView(text("Abhi koi comment nahi.", 14f, Color.LTGRAY))
+                    } else {
+                        data.comments.forEach { comment ->
+                            val row = LinearLayout(this).apply {
+                                orientation = LinearLayout.VERTICAL
+                                setPadding(dp(8), dp(8), dp(8), dp(8))
+                                background = rounded(black)
+                            }
+                            row.addView(text("${comment.name}: ${comment.text}", 14f, white))
+                            if (adminSession != null) {
+                                val delete = actionButton("🗑 Delete Comment") {
+                                    val session = adminSession
+                                    if (session == null) {
+                                        Toast.makeText(this, "Admin dobara login karein.", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        android.app.AlertDialog.Builder(this)
+                                            .setTitle("Delete comment?")
+                                            .setMessage("Kya aap is comment ko delete karna chahte hain?")
+                                            .setNegativeButton("Cancel", null)
+                                            .setPositiveButton("Delete") { _, _ ->
+                                                SupabaseClient.deleteComment(session, comment.id) { deleted ->
+                                                    deleted.onSuccess {
+                                                        Toast.makeText(this, "Comment delete ho gaya.", Toast.LENGTH_SHORT).show()
+                                                        refreshComments()
+                                                    }.onFailure {
+                                                        Toast.makeText(this, "Comment delete nahi hua: ${it.message}", Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
+                                            }.show()
+                                    }
+                                }
+                                row.addView(delete)
+                            }
+                            val params = LinearLayout.LayoutParams(-1, -2)
+                            params.setMargins(0, 0, 0, dp(7))
+                            list.addView(row, params)
+                        }
+                    }
                     stats.text = "${if (data.likedByMe) "♥ Liked" else "♥ Like"} · ${data.likes} likes     💬 ${data.comments.size} comments"
-                }.onFailure { list.text = "Comments load nahi huay: ${it.message}" }
+                }.onFailure {
+                    list.removeAllViews()
+                    list.addView(text("Comments load nahi huay: ${it.message}", 13f, Color.RED))
+                }
             }
         }
+
         dialog.setOnShowListener {
             dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val comment = message.text.toString().trim()

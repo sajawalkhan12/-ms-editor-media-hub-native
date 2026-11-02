@@ -240,6 +240,79 @@ object SupabaseClient {
         return items
     }
 
+
+    data class AdminSession(val accessToken: String, val userId: String)
+
+    fun signInAndCheckAdmin(
+        email: String,
+        password: String,
+        callback: (Result<AdminSession>) -> Unit
+    ) {
+        executor.execute {
+            val result = runCatching {
+                val base = SupabaseConfig.SUPABASE_URL.trim().trimEnd('/')
+                val key = SupabaseConfig.SUPABASE_KEY.trim()
+                require(email.isNotBlank()) { "Email enter karein." }
+                require(password.isNotBlank()) { "Password enter karein." }
+                val authConnection = URL("$base/auth/v1/token?grant_type=password")
+                    .openConnection() as HttpURLConnection
+                val authJson: JSONObject
+                try {
+                    authConnection.requestMethod = "POST"
+                    authConnection.connectTimeout = 20000
+                    authConnection.readTimeout = 20000
+                    authConnection.doOutput = true
+                    authConnection.setRequestProperty("apikey", key)
+                    authConnection.setRequestProperty("Content-Type", "application/json")
+                    authConnection.setRequestProperty("Accept", "application/json")
+                    val body = JSONObject().put("email", email.trim()).put("password", password).toString()
+                    authConnection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                    val code = authConnection.responseCode
+                    val stream = if (code in 200..299) authConnection.inputStream else authConnection.errorStream
+                    val raw = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                    if (code !in 200..299) {
+                        throw Exception("Sign-in failed (HTTP $code): " + try {
+                            JSONObject(raw).optString("msg").ifBlank { JSONObject(raw).optString("message") }.ifBlank { "Email/password check karein." }
+                        } catch (_: Exception) { "Email/password check karein." })
+                    }
+                    authJson = JSONObject(raw)
+                } finally {
+                    authConnection.disconnect()
+                }
+
+                val token = authJson.optString("access_token")
+                val userId = authJson.optJSONObject("user")?.optString("id").orEmpty()
+                require(token.isNotBlank() && userId.isNotBlank()) { "Supabase session details nahi mile." }
+
+                val rpc = URL("$base/rest/v1/rpc/is_media_admin").openConnection() as HttpURLConnection
+                try {
+                    rpc.requestMethod = "POST"
+                    rpc.connectTimeout = 20000
+                    rpc.readTimeout = 20000
+                    rpc.doOutput = true
+                    rpc.setRequestProperty("apikey", key)
+                    rpc.setRequestProperty("Authorization", "Bearer $token")
+                    rpc.setRequestProperty("Content-Type", "application/json")
+                    rpc.setRequestProperty("Accept", "application/json")
+                    rpc.setRequestProperty("Content-Profile", "public")
+                    rpc.setRequestProperty("Accept-Profile", "public")
+                    rpc.outputStream.use { it.write("{}".toByteArray(Charsets.UTF_8)) }
+                    val code = rpc.responseCode
+                    val stream = if (code in 200..299) rpc.inputStream else rpc.errorStream
+                    val raw = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                    if (code !in 200..299) throw Exception("Admin permission check failed (HTTP $code): $raw")
+                    val allowed = raw.trim().equals("true", true) ||
+                        (try { JSONObject(raw).optBoolean("is_media_admin") } catch (_: Exception) { false })
+                    if (!allowed) throw Exception("Login ho gaya, lekin is account ko Media Admin permission nahi mili.")
+                } finally {
+                    rpc.disconnect()
+                }
+                AdminSession(token, userId)
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
     fun getPublicMediaUrl(path: String): String {
 
         val cleanPath = path.trim()

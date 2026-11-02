@@ -539,8 +539,9 @@ class MainActivity : Activity() {
                     (kind == "video" || youtubeVideoId(item.externalUrl).isNotBlank())
 
             "video prompt" ->
-                (type.contains("video_prompt") ||
-                 (combined.contains("prompt") && kind == "video"))
+                type.contains("video_prompt") ||
+                    combined.contains("video prompt") ||
+                    (combined.contains("prompt") && kind == "video")
 
             "image prompt" ->
                 isImagePrompt(item)
@@ -594,8 +595,14 @@ class MainActivity : Activity() {
             val youtubeId = youtubeVideoId(item.externalUrl.ifBlank { url })
 
             if (isImagePrompt(item)) {
-                // Image prompts show a single 16:9 preview, not a separate poster plus media.
-                if (url.isNotBlank()) addImage(card, url, 16f / 9f)
+                // Prompt posts use their poster as the visible preview; source media may be absent.
+                val preview = poster.ifBlank { url }
+                if (preview.isNotBlank()) addImage(card, preview, 16f / 9f)
+                addViewPromptButton(card, item)
+            } else if (isPrompt(item) && mediaKind(item) == "text") {
+                // Text prompt records still display their saved poster.
+                if (poster.isNotBlank()) addImage(card, poster, 16f / 9f)
+                if (item.description.isNotBlank()) card.addView(text(item.description, 13f, white))
                 addViewPromptButton(card, item)
             } else {
                 if (item.description.isNotBlank()) {
@@ -1067,10 +1074,13 @@ class MainActivity : Activity() {
                 val poster = mediaUrl(item.posterPath)
 
                 if (isImagePrompt(item)) {
-                    if (url.isNotBlank()) {
-                        addImage(card, url, 16f / 9f)
-                    }
+                    val preview = poster.ifBlank { url }
+                    if (preview.isNotBlank()) addImage(card, preview, 16f / 9f)
+                    addViewPromptButton(card, item)
 
+                } else if (isPrompt(item) && mediaKind(item) == "text") {
+                    if (poster.isNotBlank()) addImage(card, poster, 16f / 9f)
+                    if (item.description.isNotBlank()) card.addView(text(item.description, 13f, white))
                     addViewPromptButton(card, item)
 
                 } else {

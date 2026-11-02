@@ -104,7 +104,7 @@ object SupabaseClient {
     }
 
 
-    data class MediaComment(val name: String, val text: String)
+    data class MediaComment(val id: String, val name: String, val text: String)
     data class EngagementSummary(val likes: Int, val likedByMe: Boolean, val comments: List<MediaComment>)
 
     private fun restRequest(method: String, path: String, body: String? = null): String {
@@ -146,12 +146,12 @@ object SupabaseClient {
                 for (i in 0 until likes.length()) {
                     if (likes.getJSONObject(i).optString("visitor_id") == visitorId) liked = true
                 }
-                val commentsJson = restRequest("GET", "media_comments?select=visitor_name,comment_text&media_id=eq.$id&order=created_at.asc")
+                val commentsJson = restRequest("GET", "media_comments?select=id,visitor_name,comment_text&media_id=eq.$id&order=created_at.asc")
                 val commentsArray = JSONArray(commentsJson)
                 val comments = mutableListOf<MediaComment>()
                 for (i in 0 until commentsArray.length()) {
                     val row = commentsArray.getJSONObject(i)
-                    comments.add(MediaComment(row.optString("visitor_name", "Visitor"), row.optString("comment_text", "")))
+                    comments.add(MediaComment(row.optString("id", ""), row.optString("visitor_name", "Visitor"), row.optString("comment_text", "")))
                 }
                 EngagementSummary(likes.length(), liked, comments)
             }
@@ -172,6 +172,69 @@ object SupabaseClient {
                     val body = JSONObject().put("media_id", mediaId).put("visitor_id", visitorId).toString()
                     restRequest("POST", "media_likes", body)
                 }
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    private fun adminRequest(session: AdminSession, method: String, path: String, body: String? = null, storage: Boolean = false): String {
+        val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+        val key = SupabaseConfig.SUPABASE_KEY.trim()
+        val endpoint = if (storage) "$base/storage/v1/$path" else "$base/rest/v1/$path"
+        val connection = URL(endpoint).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = method
+            connection.connectTimeout = 25000
+            connection.readTimeout = 25000
+            connection.setRequestProperty("apikey", key)
+            connection.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+            connection.setRequestProperty("Accept", "application/json")
+            if (!storage) {
+                connection.setRequestProperty("Content-Profile", "public")
+                connection.setRequestProperty("Accept-Profile", "public")
+            }
+            if (body != null) {
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() } ?: ""
+            if (code !in 200..299) throw Exception("Admin request HTTP $code: $response")
+            return response
+        } finally { connection.disconnect() }
+    }
+
+    fun deleteMedia(session: AdminSession, item: MediaItem, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(session.accessToken.isNotBlank()) { "Admin session expire ho gayi. Dobara login karein." }
+                val id = URLEncoder.encode(item.id, "UTF-8")
+                // Delete the database row first; if RLS rejects it, the media files remain untouched.
+                adminRequest(session, "DELETE", "media_items?id=eq.$id")
+                val paths = listOf(item.storagePath, item.posterPath)
+                    .filter { it.isNotBlank() && !it.startsWith("http://") && !it.startsWith("https://") }
+                paths.forEach { rawPath ->
+                    val encoded = rawPath.removePrefix("/").split("/").joinToString("/") {
+                        URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                    }
+                    runCatching { adminRequest(session, "DELETE", "object/media/$encoded", storage = true) }
+                }
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun deleteComment(session: AdminSession, commentId: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(session.accessToken.isNotBlank()) { "Admin session expire ho gayi. Dobara login karein." }
+                require(commentId.isNotBlank()) { "Comment ID nahi mila." }
+                val id = URLEncoder.encode(commentId, "UTF-8")
+                adminRequest(session, "DELETE", "media_comments?id=eq.$id")
                 Unit
             }
             mainHandler.post { callback(result) }

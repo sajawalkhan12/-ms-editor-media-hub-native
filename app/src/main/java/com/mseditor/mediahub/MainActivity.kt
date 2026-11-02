@@ -418,9 +418,11 @@ class MainActivity : Activity() {
         }
         val titleField = edit("Media title")
         val descriptionField = edit("Description (optional)", true)
+        val uploadCategories = listOf(
+            "Video Songs", "Video Tutorial", "Video Prompt", "Image Prompt", "Presets & Assets"
+        )
         val category = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
-                listOf("Movie", "Trailer", "Image", "Audio"))
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, uploadCategories)
         }
         val mediaLabel = text("No media file selected", 13f, Color.LTGRAY)
         val posterLabel = text("Poster: optional", 13f, Color.LTGRAY)
@@ -455,7 +457,11 @@ class MainActivity : Activity() {
             val titleValue = titleField.text.toString().trim()
             if (titleValue.isBlank()) { titleField.error = "Title zaroori hai"; return@actionButton }
             val mediaType = when (category.selectedItemPosition) {
-                0 -> "movie"; 1 -> "trailer"; 2 -> "image"; else -> "audio"
+                0 -> "song"
+                1 -> "tutorial"
+                2 -> "video_prompt"
+                3 -> "image_prompt"
+                else -> "assets"
             }
             uploadButton.isEnabled = false
             uploadButton.text = "Uploading..."
@@ -835,6 +841,7 @@ class MainActivity : Activity() {
             }
 
             addEngagementControls(card, item, url)
+                addAdminDeleteButton(card, item)
             if (adminSession != null) {
                 val deleteButton = actionButton("🗑 Delete Post") {
                     android.app.AlertDialog.Builder(this)
@@ -1341,6 +1348,7 @@ class MainActivity : Activity() {
                 }
 
                 addEngagementControls(card, item, url)
+                addAdminDeleteButton(card, item)
 
                 val params = LinearLayout.LayoutParams(-1, -2)
                 params.setMargins(0, 0, 0, dp(12))
@@ -1456,6 +1464,41 @@ class MainActivity : Activity() {
         }
         card.addView(actions)
         loadEngagement(item, stats)
+    }
+
+    private fun addAdminDeleteButton(card: LinearLayout, item: MediaItem) {
+        val session = adminSession ?: return
+        val delete = actionButton("🗑 Delete Post") {
+            val currentSession = adminSession
+            if (currentSession == null) {
+                Toast.makeText(this, "Admin dobara login karein.", Toast.LENGTH_LONG).show()
+                return@actionButton
+            }
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Delete post?")
+                .setMessage("“${item.title.ifBlank { "Untitled Post" }}” ko website aur app dono se delete karna hai?")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Delete") { _, _ ->
+                    delete.isEnabled = false
+                    delete.text = "Deleting..."
+                    SupabaseClient.deleteMedia(currentSession, item) { result ->
+                        if (isFinishing || isDestroyed) return@deleteMedia
+                        result.onSuccess {
+                            allMediaItems = allMediaItems.filterNot { it.id == item.id }
+                            Toast.makeText(this, "Post delete ho gayi.", Toast.LENGTH_LONG).show()
+                            if (selectedCategory == "Home") loadMediaItems() else showCategory(selectedCategory)
+                        }.onFailure { error ->
+                            delete.isEnabled = true
+                            delete.text = "🗑 Delete Post"
+                            Toast.makeText(this, "Delete nahi hua: ${error.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                .show()
+        }
+        val params = LinearLayout.LayoutParams(-1, dp(46))
+        params.topMargin = dp(8)
+        card.addView(delete, params)
     }
 
     private fun loadEngagement(item: MediaItem, stats: TextView) {

@@ -354,7 +354,7 @@ class MainActivity : Activity() {
 
             result.onSuccess { items ->
                 allMediaItems = items
-                rebuildCategorySections()
+                // Home shows the post feed only. Do not append the four category summary cards.
                 filterMediaItems(search.text.toString())
 
                 Toast.makeText(

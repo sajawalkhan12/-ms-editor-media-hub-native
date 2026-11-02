@@ -57,6 +57,10 @@ class MainActivity : Activity() {
 
     private var selectedCategory = "Home"
     private var adminSession: SupabaseClient.AdminSession? = null
+    private val PICK_MEDIA_FILE = 4101
+    private val PICK_POSTER_FILE = 4102
+    private var selectedUploadUri: Uri? = null
+    private var selectedPosterUri: Uri? = null
 
     private val categories = listOf(
         "Home",
@@ -296,7 +300,7 @@ class MainActivity : Activity() {
         }
         section("ADMIN & APPEARANCE")
         item("Cover Image & Logo") { openAdminWebsite("Admin appearance settings") }
-        item("Upload Media") { openAdminWebsite("Admin media upload") }
+        item("Upload Media") { showUploadForm() }
         section("APP")
         item("Back to Home") { showHome() }
         item("Exit App") { finish() }
@@ -374,12 +378,130 @@ class MainActivity : Activity() {
         page.addView(text("ADMIN DASHBOARD", 23f, emerald, true))
         page.addView(text("Verified admin account", 14f, gold).apply { setPadding(0, dp(8), 0, dp(18)) })
         page.addView(text("Your account passed Supabase email/password sign-in and the is_media_admin permission check.", 14f, white))
-        page.addView(actionButton("Open Full Admin Tools (Website)") { openAdminWebsite("Admin tools") }, LinearLayout.LayoutParams(-1, dp(50)))
+        page.addView(actionButton("＋ Upload Media (In App)") { showUploadForm() }, LinearLayout.LayoutParams(-1, dp(50)))
+        val webTools = actionButton("Open Full Admin Tools (Website)") { openAdminWebsite("Admin tools") }
+        val webParams = LinearLayout.LayoutParams(-1, dp(50))
+        webParams.topMargin = dp(10)
+        page.addView(webTools, webParams)
         val signOut = actionButton("Admin Sign Out") { adminSession = null; showHome(); Toast.makeText(this, "Admin sign out ho gaya.", Toast.LENGTH_SHORT).show() }
         val signParams = LinearLayout.LayoutParams(-1, dp(50)); signParams.topMargin = dp(10); page.addView(signOut, signParams)
         val back = actionButton("Back to Home") { showHome() }
         val backParams = LinearLayout.LayoutParams(-1, dp(50)); backParams.topMargin = dp(10); page.addView(back, backParams)
         setContentView(page)
+    }
+
+
+    private fun showUploadForm() {
+        if (adminSession == null) {
+            Toast.makeText(this, "Upload ke liye pehle Admin Login karein.", Toast.LENGTH_LONG).show()
+            showAdminLogin()
+            return
+        }
+        selectedUploadUri = null
+        selectedPosterUri = null
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(22))
+            setBackgroundColor(black)
+        }
+        page.addView(text("UPLOAD MEDIA", 23f, emerald, true))
+        page.addView(text("Native upload · Website ke saath shared", 13f, gold).apply {
+            setPadding(0, dp(6), 0, dp(16))
+        })
+        fun edit(hintValue: String, multiline: Boolean = false) = EditText(this).apply {
+            hint = hintValue
+            setTextColor(white)
+            setHintTextColor(Color.LTGRAY)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = rounded(panel, emerald)
+            if (multiline) { minLines = 3; gravity = Gravity.TOP } else setSingleLine(true)
+        }
+        val titleField = edit("Media title")
+        val descriptionField = edit("Description (optional)", true)
+        val category = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("Movie", "Trailer", "Image", "Audio"))
+        }
+        val mediaLabel = text("No media file selected", 13f, Color.LTGRAY)
+        val posterLabel = text("Poster: optional", 13f, Color.LTGRAY)
+        val status = text("Ready to upload.", 13f, gold)
+        fun add(view: View, top: Int = 9) {
+            val p = LinearLayout.LayoutParams(-1, -2)
+            p.topMargin = dp(top)
+            page.addView(view, p)
+        }
+        add(titleField, 12)
+        add(descriptionField)
+        add(text("Category", 13f, gold), 12)
+        add(category)
+        add(actionButton("Choose Media File") {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+            }, PICK_MEDIA_FILE)
+        }, 14)
+        add(mediaLabel, 3)
+        add(actionButton("Choose Poster / Thumbnail (Optional)") {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "image/*"
+            }, PICK_POSTER_FILE)
+        }, 10)
+        add(posterLabel, 3)
+        val uploadButton = actionButton("Upload to Supabase") {
+            val session = adminSession
+            val mediaUri = selectedUploadUri
+            if (session == null) { status.text = "Admin session nahi mili. Dobara login karein."; return@actionButton }
+            if (mediaUri == null) { status.text = "Pehle media file select karein."; return@actionButton }
+            val titleValue = titleField.text.toString().trim()
+            if (titleValue.isBlank()) { titleField.error = "Title zaroori hai"; return@actionButton }
+            val mediaType = when (category.selectedItemPosition) {
+                0 -> "movie"; 1 -> "trailer"; 2 -> "image"; else -> "audio"
+            }
+            uploadButton.isEnabled = false
+            uploadButton.text = "Uploading..."
+            status.text = "File upload ho rahi hai. App band na karein..."
+            SupabaseClient.uploadMedia(this, session, mediaUri, selectedPosterUri,
+                titleValue, descriptionField.text.toString().trim(), mediaType) { result ->
+                if (isFinishing || isDestroyed) return@uploadMedia
+                uploadButton.isEnabled = true
+                uploadButton.text = "Upload to Supabase"
+                result.onSuccess {
+                    status.text = "Upload successful! Website aur app dono par available hai."
+                    selectedUploadUri = null
+                    selectedPosterUri = null
+                    mediaLabel.text = "No media file selected"
+                    posterLabel.text = "Poster: optional"
+                    titleField.text.clear()
+                    descriptionField.text.clear()
+                    Toast.makeText(this, "Media upload ho gaya.", Toast.LENGTH_LONG).show()
+                }.onFailure { e ->
+                    status.text = "Upload failed: ${e.message}"
+                    Toast.makeText(this, "Upload failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        add(uploadButton, 16)
+        add(status, 10)
+        add(actionButton("Back to Admin Dashboard") { showAdminPage() }, 18)
+        add(actionButton("Back to Home") { showHome() }, 8)
+        setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
+        when (requestCode) {
+            PICK_MEDIA_FILE -> {
+                selectedUploadUri = uri
+                Toast.makeText(this, "Media file select ho gayi.", Toast.LENGTH_SHORT).show()
+            }
+            PICK_POSTER_FILE -> {
+                selectedPosterUri = uri
+                Toast.makeText(this, "Poster select ho gaya.", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun openAdminWebsite(label: String) {

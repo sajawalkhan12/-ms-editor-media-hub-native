@@ -254,6 +254,10 @@ class MainActivity : Activity() {
     }
 
     private fun addCategorySection(category: String) {
+        val count = allMediaItems.count { belongsToCategory(it, category) }
+        // Never create a category card when it has no matching posts.
+        if (count == 0) return
+
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
@@ -262,12 +266,6 @@ class MainActivity : Activity() {
         }
 
         section.addView(text(category, 19f, emerald, true))
-
-        val count = allMediaItems.count {
-            belongsToCategory(it, category)
-        }
-        if (count == 0) return
-
         val description = "$count posts available"
 
         val card = LinearLayout(this).apply {
@@ -296,15 +294,19 @@ class MainActivity : Activity() {
     }
 
     private fun rebuildCategorySections() {
-        if (!::content.isInitialized) return
-        // Keep the Latest Posts heading and post list; rebuild category tiles from loaded data.
-        val remove = mutableListOf<View>()
-        for (i in 0 until content.childCount) {
-            val child = content.getChildAt(i)
-            if (child.tag?.toString() in categories.drop(1)) remove.add(child)
+        if (!::content.isInitialized || !::postsContainer.isInitialized) return
+
+        // Category tiles always live after Latest Posts and the post list.
+        // Clear that entire tail so stale/untagged empty tiles cannot survive Refresh.
+        val postsIndex = content.indexOfChild(postsContainer)
+        if (postsIndex < 0) return
+        while (content.childCount > postsIndex + 1) {
+            content.removeViewAt(content.childCount - 1)
         }
-        remove.forEach { content.removeView(it) }
-        categories.drop(1).forEach { addCategorySection(it) }
+
+        categories.drop(1).forEach { category ->
+            addCategorySection(category)
+        }
     }
 
     private fun filterCategories(query: String) {
@@ -537,19 +539,11 @@ class MainActivity : Activity() {
             )
             val poster = mediaUrl(item.posterPath)
             val youtubeId = youtubeVideoId(item.externalUrl.ifBlank { url })
-            if (poster.isBlank() && youtubeId.isNotBlank()) {
-                addImage(card, "https://img.youtube.com/vi/$youtubeId/hqdefault.jpg", 16f / 9f)
-            } else if (poster.isNotBlank() && mediaKind(item) == "video") {
-                addImage(card, poster, 16f / 9f)
-            }
 
             if (isImagePrompt(item)) {
-                if (url.isNotBlank()) {
-                    addImage(card, url, 16f / 9f)
-                }
-
+                // Image prompts show a single 16:9 preview, not a separate poster plus media.
+                if (url.isNotBlank()) addImage(card, url, 16f / 9f)
                 addViewPromptButton(card, item)
-
             } else {
                 if (item.description.isNotBlank()) {
                     val description = text(item.description, 13f, white)
@@ -559,18 +553,19 @@ class MainActivity : Activity() {
 
                 when (mediaKind(item)) {
                     "audio" -> addNativeMediaPlayer(card, url, false)
-                    "video" -> addNativeMediaPlayer(card, url, true, poster)
-                    "image" -> addImage(card, url, 16f / 9f)
-                    else -> {
-                        if (url.isNotBlank()) {
-                            addImage(card, url, 16f / 9f)
+                    "video" -> {
+                        val thumbnail = when {
+                            poster.isNotBlank() -> poster
+                            youtubeId.isNotBlank() -> "https://img.youtube.com/vi/$youtubeId/hqdefault.jpg"
+                            else -> ""
                         }
+                        addVideoThumbnail(card, thumbnail, url, poster)
                     }
+                    "image" -> addImage(card, url, 16f / 9f)
+                    else -> if (url.isNotBlank()) addImage(card, url, 16f / 9f)
                 }
 
-                if (isPrompt(item)) {
-                    addViewPromptButton(card, item)
-                }
+                if (isPrompt(item)) addViewPromptButton(card, item)
             }
 
             addEngagementControls(card, item, url)
@@ -601,6 +596,82 @@ class MainActivity : Activity() {
         val params = LinearLayout.LayoutParams(-1, dp(48))
         params.setMargins(0, dp(10), 0, 0)
         card.addView(button, params)
+    }
+
+    // Show one 16:9 thumbnail first. The existing player is created only after a user taps it.
+    // addNativeMediaPlayer() itself is intentionally unchanged to preserve working playback settings.
+    private fun addVideoThumbnail(
+        card: LinearLayout,
+        thumbnailUrl: String,
+        videoUrl: String,
+        posterUrl: String = ""
+    ) {
+        val frame = object : FrameLayout(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val width = MeasureSpec.getSize(widthMeasureSpec)
+                val height = width * 9 / 16
+                super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
+            }
+        }
+        frame.layoutParams = LinearLayout.LayoutParams(-1, -2)
+        frame.setBackgroundColor(Color.rgb(3, 12, 15))
+
+        val imageView = ImageView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Video thumbnail. Tap to play."
+        }
+        frame.addView(imageView)
+
+        val playHint = TextView(this).apply {
+            text = "▶\nTap to play video"
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setTextColor(white)
+            setBackgroundColor(Color.argb(125, 0, 0, 0))
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
+        }
+        frame.addView(playHint)
+
+        if (thumbnailUrl.isNotBlank()) {
+            imageExecutor.execute {
+                var connection: HttpURLConnection? = null
+                try {
+                    connection = URL(thumbnailUrl).openConnection() as HttpURLConnection
+                    connection.connectTimeout = 20000
+                    connection.readTimeout = 20000
+                    connection.instanceFollowRedirects = true
+                    val code = connection.responseCode
+                    if (code !in 200..299) throw Exception("Thumbnail HTTP $code")
+                    val bitmap = connection.inputStream.use { BitmapFactory.decodeStream(it) }
+                    mainHandler.post {
+                        if (!isFinishing && !isDestroyed && bitmap != null) {
+                            imageView.setImageBitmap(bitmap)
+                            playHint.setBackgroundColor(Color.argb(90, 0, 0, 0))
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Keep the dark 16:9 tap-to-play placeholder if the thumbnail cannot load.
+                } finally {
+                    connection?.disconnect()
+                }
+            }
+        }
+
+        frame.setOnClickListener {
+            val insertAt = card.indexOfChild(frame)
+            if (insertAt < 0) return@setOnClickListener
+            card.removeView(frame)
+            val oldCount = card.childCount
+            addNativeMediaPlayer(card, videoUrl, true, posterUrl)
+            if (card.childCount > oldCount) {
+                val player = card.getChildAt(card.childCount - 1)
+                card.removeView(player)
+                card.addView(player, insertAt.coerceAtMost(card.childCount))
+            }
+        }
+
+        card.addView(frame)
     }
 
     private fun addImage(
@@ -955,14 +1026,18 @@ class MainActivity : Activity() {
                     }
 
                     when (mediaKind(item)) {
-                        "video" -> addNativeMediaPlayer(card, url, true, poster)
+                        "video" -> {
+                            val youtubeId = youtubeVideoId(item.externalUrl.ifBlank { url })
+                            val thumbnail = when {
+                                poster.isNotBlank() -> poster
+                                youtubeId.isNotBlank() -> "https://img.youtube.com/vi/$youtubeId/hqdefault.jpg"
+                                else -> ""
+                            }
+                            addVideoThumbnail(card, thumbnail, url, poster)
+                        }
                         "audio" -> addNativeMediaPlayer(card, url, false)
                         "image" -> addImage(card, url, 16f / 9f)
-                        else -> {
-                            if (url.isNotBlank()) {
-                                addImage(card, url, 16f / 9f)
-                            }
-                        }
+                        else -> if (url.isNotBlank()) addImage(card, url, 16f / 9f)
                     }
 
                     if (isPrompt(item)) {

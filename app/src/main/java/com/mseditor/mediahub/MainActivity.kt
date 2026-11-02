@@ -432,6 +432,10 @@ class MainActivity : Activity() {
                 val type = item.mediaType.lowercase()
 
                 when {
+                    // Prompt records are text/content cards, not playable videos merely because
+                    // their category name contains "video". Real video URLs were detected above.
+                    type.contains("prompt") -> "text"
+
                     type.contains("video") ||
                     type.contains("movie") ||
                     type.contains("trailer") ||
@@ -442,7 +446,6 @@ class MainActivity : Activity() {
                     type.contains("audio song") -> "audio"
 
                     type.contains("image") -> "image"
-                    type.contains("prompt") -> "text"
                     else -> "text"
                 }
             }

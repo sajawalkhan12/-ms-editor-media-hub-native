@@ -446,7 +446,8 @@ class MainActivity : Activity() {
             }, PICK_POSTER_FILE)
         }, 10)
         add(posterLabel, 3)
-        val uploadButton = actionButton("Upload to Supabase") {
+        lateinit var uploadButton: Button
+        uploadButton = actionButton("Upload to Supabase") {
             val session = adminSession
             val mediaUri = selectedUploadUri
             if (session == null) { status.text = "Admin session nahi mili. Dobara login karein."; return@actionButton }

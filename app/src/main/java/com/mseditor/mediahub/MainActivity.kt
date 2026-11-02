@@ -1482,7 +1482,8 @@ class MainActivity : Activity() {
 
     private fun addAdminDeleteButton(card: LinearLayout, item: MediaItem) {
         val session = adminSession ?: return
-        val delete = actionButton("🗑 Delete Post") {
+        lateinit var delete: Button
+        delete = actionButton("🗑 Delete Post") {
             val currentSession = adminSession
             if (currentSession == null) {
                 Toast.makeText(this, "Admin dobara login karein.", Toast.LENGTH_LONG).show()

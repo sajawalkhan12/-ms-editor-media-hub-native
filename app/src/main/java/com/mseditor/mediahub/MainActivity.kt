@@ -226,13 +226,24 @@ class MainActivity : Activity() {
             setPadding(2, dp(8), 2, dp(8))
         }
 
-        val bottomItems = listOf(
-            "⌂\nHome",
-            "✧\nVideo Prompt",
-            "▧\nImage Prompt",
-            "▦\nAssets",
-            "▷\nTutorials"
-        )
+        // Show only navigation categories that currently contain posts.
+        // Home is always available; empty category tabs were the recurring blank boxes.
+        val bottomItems = buildList {
+            add("⌂\nHome")
+            categories.drop(1).forEach { category ->
+                if (allMediaItems.any { belongsToCategory(it, category) }) {
+                    val icon = when (category) {
+                        "Video Songs" -> "♫"
+                        "Video Prompt" -> "✧"
+                        "Image Prompt" -> "▧"
+                        "Assets" -> "▦"
+                        "Tutorials" -> "▷"
+                        else -> "•"
+                    }
+                    add("$icon\n$category")
+                }
+            }
+        }
 
         bottomItems.forEach { item ->
             val tab = text(item, 11f, emerald, true).apply {

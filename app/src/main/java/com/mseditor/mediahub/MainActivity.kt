@@ -418,6 +418,7 @@ class MainActivity : Activity() {
         }
         val titleField = edit("Media title")
         val descriptionField = edit("Description (optional)", true)
+        val promptField = edit("Prompt text (for Prompt categories)", true)
         val uploadCategories = listOf(
             "Video Songs", "Video Tutorial", "Video Prompt", "Image Prompt", "Presets & Assets"
         )
@@ -434,6 +435,7 @@ class MainActivity : Activity() {
         }
         add(titleField, 12)
         add(descriptionField)
+        add(promptField)
         add(text("Category", 13f, gold), 12)
         add(category)
         add(actionButton("Choose Media File") {
@@ -453,21 +455,32 @@ class MainActivity : Activity() {
             val session = adminSession
             val mediaUri = selectedUploadUri
             if (session == null) { status.text = "Admin session nahi mili. Dobara login karein."; return@actionButton }
-            if (mediaUri == null) { status.text = "Pehle media file select karein."; return@actionButton }
             val titleValue = titleField.text.toString().trim()
+            val promptValue = promptField.text.toString().trim()
             if (titleValue.isBlank()) { titleField.error = "Title zaroori hai"; return@actionButton }
-            val mediaType = when (category.selectedItemPosition) {
+            val selectedCategory = category.selectedItemPosition
+            val requiresMediaFile = selectedCategory == 0 || selectedCategory == 1 || selectedCategory == 4
+            if (requiresMediaFile && mediaUri == null) {
+                status.text = "Is category ke liye media file select karein."
+                return@actionButton
+            }
+            if ((selectedCategory == 2 || selectedCategory == 3) && promptValue.isBlank()) {
+                promptField.error = "Prompt text likhein"
+                status.text = "Prompt categories ke liye prompt text zaroori hai."
+                return@actionButton
+            }
+            val mediaType = when (selectedCategory) {
                 0 -> "song"
                 1 -> "tutorial"
                 2 -> "video_prompt"
                 3 -> "image_prompt"
-                else -> "assets"
+                else -> "image"
             }
             uploadButton.isEnabled = false
             uploadButton.text = "Uploading..."
             status.text = "File upload ho rahi hai. App band na karein..."
             SupabaseClient.uploadMedia(this, session, mediaUri, selectedPosterUri,
-                titleValue, descriptionField.text.toString().trim(), mediaType) { result ->
+                titleValue, descriptionField.text.toString().trim(), mediaType, promptValue) { result ->
                 if (isFinishing || isDestroyed) return@uploadMedia
                 uploadButton.isEnabled = true
                 uploadButton.text = "Upload to Supabase"
@@ -479,6 +492,7 @@ class MainActivity : Activity() {
                     posterLabel.text = "Poster: optional"
                     titleField.text.clear()
                     descriptionField.text.clear()
+                    promptField.text.clear()
                     Toast.makeText(this, "Media upload ho gaya.", Toast.LENGTH_LONG).show()
                 }.onFailure { e ->
                     status.text = "Upload failed: ${e.message}"

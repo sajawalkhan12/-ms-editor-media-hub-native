@@ -1173,14 +1173,34 @@ class MainActivity : Activity() {
         }
         addAction("💬 Comment") { showComments(item, stats) }
         addAction("↗ Share") {
-            if (mediaUrl.isBlank()) {
-                Toast.makeText(this, "Share link available nahi hai.", Toast.LENGTH_SHORT).show()
-            } else {
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, "${item.title}\n$mediaUrl")
+            // Prompt posts often have no downloadable media URL. Share their text
+            // content and the public Media Hub page instead of disabling Share.
+            val shareText = buildString {
+                append(item.title.ifBlank { "MS Editor Media Hub" })
+                if (item.description.isNotBlank()) {
+                    append("\n\n")
+                    append(item.description)
                 }
-                startActivity(Intent.createChooser(send, "Share media"))
+                if (item.promptText.isNotBlank()) {
+                    append("\n\nPrompt:\n")
+                    append(item.promptText)
+                }
+                if (mediaUrl.isNotBlank()) {
+                    append("\n\n")
+                    append(mediaUrl)
+                }
+                append("\n\nMS Editor Media Hub:\n")
+                append("https://sajawalkhan12.github.io/ms-editor-media-hub-/")
+            }
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, item.title.ifBlank { "MS Editor Media Hub" })
+                putExtra(Intent.EXTRA_TEXT, shareText)
+            }
+            try {
+                startActivity(Intent.createChooser(send, "Share post"))
+            } catch (e: Exception) {
+                Toast.makeText(this, "Share nahi ho saka: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
         addAction("↓ Download") {

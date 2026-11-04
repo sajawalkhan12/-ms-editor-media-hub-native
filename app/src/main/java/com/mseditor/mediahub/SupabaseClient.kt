@@ -207,6 +207,65 @@ object SupabaseClient {
         } finally { connection.disconnect() }
     }
 
+    fun updateMediaDetails(
+        context: android.content.Context,
+        session: AdminSession,
+        mediaId: String,
+        title: String,
+        description: String,
+        posterUri: android.net.Uri?,
+        callback: (Result<Unit>) -> Unit
+    ) {
+        executor.execute {
+            val result = runCatching {
+                require(session.accessToken.isNotBlank()) { "Admin session expire ho gayi. Dobara login karein." }
+                require(title.isNotBlank()) { "Title zaroori hai." }
+                var posterPath: String? = null
+                if (posterUri != null) {
+                    val resolver = context.contentResolver
+                    val mime = resolver.getType(posterUri) ?: "image/jpeg"
+                    require(mime.startsWith("image/")) { "Sirf image poster select karein." }
+                    val displayName = try {
+                        resolver.query(posterUri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                            if (it.moveToFirst()) it.getString(0) else null
+                        }
+                    } catch (_: Exception) { null } ?: "poster.jpg"
+                    val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                    val objectPath = "posters/${session.userId}/${java.util.UUID.randomUUID()}_$safeName"
+                    val encoded = objectPath.split("/").joinToString("/") {
+                        URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                    }
+                    val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                    val upload = URL("$base/storage/v1/object/media/$encoded").openConnection() as HttpURLConnection
+                    try {
+                        upload.requestMethod = "POST"
+                        upload.connectTimeout = 30000
+                        upload.readTimeout = 120000
+                        upload.doOutput = true
+                        upload.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                        upload.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                        upload.setRequestProperty("Content-Type", mime)
+                        upload.setRequestProperty("x-upsert", "false")
+                        resolver.openInputStream(posterUri)?.use { input ->
+                            upload.outputStream.use { output -> input.copyTo(output, 64 * 1024) }
+                        } ?: throw Exception("Poster image read nahi ho saki.")
+                        val code = upload.responseCode
+                        val raw = (if (code in 200..299) upload.inputStream else upload.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+                        if (code !in 200..299) throw Exception("Poster upload HTTP $code: $raw")
+                    } finally { upload.disconnect() }
+                    posterPath = objectPath
+                }
+                val body = JSONObject().put("title", title).put("description", description).apply {
+                    if (posterPath != null) put("poster_path", posterPath)
+                }.toString()
+                val id = URLEncoder.encode(mediaId, "UTF-8")
+                adminRequest(session, "PATCH", "media_items?id=eq.$id", body)
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
     fun deleteMedia(session: AdminSession, item: MediaItem, callback: (Result<Unit>) -> Unit) {
         executor.execute {
             val result = runCatching {
@@ -380,16 +439,17 @@ object SupabaseClient {
     fun uploadMedia(
         context: android.content.Context,
         session: AdminSession,
-        mediaUri: android.net.Uri,
+        mediaUri: android.net.Uri?,
         posterUri: android.net.Uri?,
         title: String,
         description: String,
         mediaType: String,
+        promptText: String,
         callback: (Result<Unit>) -> Unit
     ) {
         executor.execute {
             val result = runCatching {
-                require(mediaType in listOf("movie", "trailer", "image", "audio")) { "Category valid nahi hai." }
+                require(mediaType in listOf("movie", "trailer", "image", "audio", "tutorial", "song", "video_prompt", "image_prompt")) { "Category valid nahi hai." }
                 val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
                 val key = SupabaseConfig.SUPABASE_KEY.trim()
                 fun uploadObject(uri: android.net.Uri, folder: String): String {
@@ -426,8 +486,11 @@ object SupabaseClient {
                     } finally { connection.disconnect() }
                     return objectPath
                 }
-                val mediaPath = uploadObject(mediaUri, "media")
+                val mediaPath = if (mediaUri != null) uploadObject(mediaUri, "media") else ""
                 val posterPath = if (posterUri != null) uploadObject(posterUri, "posters") else ""
+                require(mediaPath.isNotBlank() || promptText.isNotBlank() || description.isNotBlank()) {
+                    "Media file ya prompt/description zaroori hai."
+                }
                 val body = JSONObject()
                     .put("title", title)
                     .put("description", description)
@@ -435,6 +498,7 @@ object SupabaseClient {
                     .put("storage_path", mediaPath)
                     .put("external_url", "")
                     .put("poster_path", posterPath)
+                    .put("prompt_text", promptText)
                     .put("created_by", session.userId)
                     .toString()
                 val insert = URL("$base/rest/v1/media_items").openConnection() as HttpURLConnection
@@ -455,6 +519,113 @@ object SupabaseClient {
                     if (code !in 200..299) throw Exception("Media record HTTP $code: $raw")
                 } finally { insert.disconnect() }
                 Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+
+    data class AppearanceSettings(val logoUrl: String = "", val coverUrl: String = "")
+
+    private fun publicStorageRequest(path: String): String {
+        val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+        val encoded = path.split("/").joinToString("/") {
+            URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+        }
+        val connection = URL("$base/storage/v1/object/public/media/$encoded").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 20000
+            connection.readTimeout = 20000
+            connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+            val code = connection.responseCode
+            if (code == 404) return "{}"
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val raw = stream?.bufferedReader()?.use { it.readText() } ?: "{}"
+            if (code !in 200..299) throw Exception("Appearance read HTTP $code: $raw")
+            return raw
+        } finally { connection.disconnect() }
+    }
+
+    fun getAppearanceSettings(callback: (Result<AppearanceSettings>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val json = JSONObject(publicStorageRequest("appearance/site-settings.json"))
+                AppearanceSettings(json.optString("logoUrl"), json.optString("coverUrl"))
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun updateAppearanceSetting(
+        context: android.content.Context,
+        session: AdminSession,
+        imageUri: android.net.Uri,
+        kind: String,
+        callback: (Result<AppearanceSettings>) -> Unit
+    ) {
+        executor.execute {
+            val result = runCatching {
+                require(kind == "logoUrl" || kind == "coverUrl") { "Appearance type valid nahi hai." }
+                require(session.accessToken.isNotBlank()) { "Admin session expire ho gayi. Dobara login karein." }
+                val resolver = context.contentResolver
+                val mime = resolver.getType(imageUri) ?: "image/jpeg"
+                require(mime.startsWith("image/")) { "Sirf image file select karein." }
+                val ext = when (mime.lowercase()) {
+                    "image/png" -> "png"
+                    "image/webp" -> "webp"
+                    "image/gif" -> "gif"
+                    else -> "jpg"
+                }
+                val objectPath = "appearance/${if (kind == "logoUrl") "logo" else "cover"}-${System.currentTimeMillis()}.$ext"
+                val encoded = objectPath.split("/").joinToString("/") {
+                    URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                }
+                val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                val upload = URL("$base/storage/v1/object/media/$encoded").openConnection() as HttpURLConnection
+                try {
+                    upload.requestMethod = "POST"
+                    upload.connectTimeout = 30000
+                    upload.readTimeout = 120000
+                    upload.doOutput = true
+                    upload.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    upload.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                    upload.setRequestProperty("Content-Type", mime)
+                    upload.setRequestProperty("x-upsert", "true")
+                    resolver.openInputStream(imageUri)?.use { input ->
+                        upload.outputStream.use { output -> input.copyTo(output, 64 * 1024) }
+                    } ?: throw Exception("Image read nahi ho saki.")
+                    val code = upload.responseCode
+                    val raw = (if (code in 200..299) upload.inputStream else upload.errorStream)
+                        ?.bufferedReader()?.use { it.readText() } ?: ""
+                    if (code !in 200..299) throw Exception("Image upload HTTP $code: $raw")
+                } finally { upload.disconnect() }
+
+                // Keep the other appearance setting and any existing JSON fields intact.
+                val settings = JSONObject(publicStorageRequest("appearance/site-settings.json"))
+                val publicUrl = "$base/storage/v1/object/public/media/$encoded"
+                settings.put(kind, publicUrl)
+                val jsonPath = "appearance/site-settings.json"
+                val jsonEncoded = jsonPath.split("/").joinToString("/") {
+                    URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                }
+                val save = URL("$base/storage/v1/object/media/$jsonEncoded").openConnection() as HttpURLConnection
+                try {
+                    save.requestMethod = "POST"
+                    save.connectTimeout = 25000
+                    save.readTimeout = 25000
+                    save.doOutput = true
+                    save.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    save.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                    save.setRequestProperty("Content-Type", "application/json")
+                    save.setRequestProperty("x-upsert", "true")
+                    save.outputStream.use { it.write(settings.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = save.responseCode
+                    val raw = (if (code in 200..299) save.inputStream else save.errorStream)
+                        ?.bufferedReader()?.use { it.readText() } ?: ""
+                    if (code !in 200..299) throw Exception("Settings save HTTP $code: $raw")
+                } finally { save.disconnect() }
+                AppearanceSettings(settings.optString("logoUrl"), settings.optString("coverUrl"))
             }
             mainHandler.post { callback(result) }
         }

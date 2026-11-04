@@ -59,6 +59,11 @@ class MainActivity : Activity() {
     private var adminSession: SupabaseClient.AdminSession? = null
     private val PICK_MEDIA_FILE = 4101
     private val PICK_POSTER_FILE = 4102
+    private val PICK_EDIT_POSTER_FILE = 4104
+    private var pendingEditPoster: ((Uri) -> Unit)? = null
+    private val PICK_APPEARANCE_IMAGE = 4103
+    private var selectedAppearanceKind = "logoUrl"
+    private var appearanceSettings = SupabaseClient.AppearanceSettings()
     private var selectedUploadUri: Uri? = null
     private var selectedPosterUri: Uri? = null
 
@@ -73,6 +78,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SupabaseClient.getAppearanceSettings { result -> result.onSuccess { appearanceSettings = it; if (!isFinishing && !isDestroyed && selectedCategory == "Home") showHome() } }
         showHome()
     }
 
@@ -128,13 +134,20 @@ class MainActivity : Activity() {
             setBackgroundColor(panel)
         }
 
+        val logo = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = rounded(black, emerald)
+        }
+        header.addView(logo, LinearLayout.LayoutParams(dp(54), dp(54)))
+        loadAppearanceImage(appearanceSettings.logoUrl, logo)
+
         val brand = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(11) }
         }
-
-        brand.addView(text("MS EDITOR MEDIA HUB", 19f, emerald, true))
-        brand.addView(text("Video Songs • Tutorials • Prompts", 12f, gold))
+        brand.addView(text("MS Editor Media Hub", 18f, emerald, true))
+        brand.addView(text("Video Songs • Tutorials • Prompts", 11f, Color.rgb(70, 220, 235)))
         header.addView(brand)
 
         val settings = text("⚙", 27f, gold, true).apply {
@@ -145,6 +158,11 @@ class MainActivity : Activity() {
 
         header.addView(settings)
         root.addView(header)
+        if (appearanceSettings.coverUrl.isNotBlank()) {
+            val cover = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+            root.addView(cover, LinearLayout.LayoutParams(-1, dp(138)))
+            loadAppearanceImage(appearanceSettings.coverUrl, cover)
+        }
 
         val searchRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -299,7 +317,7 @@ class MainActivity : Activity() {
             }
         }
         section("ADMIN & APPEARANCE")
-        item("Cover Image & Logo") { openAdminWebsite("Admin appearance settings") }
+        item("Cover Image & Logo") { showAppearanceSettings() }
         item("Upload Media") { showUploadForm() }
         section("APP")
         item("Back to Home") { showHome() }
@@ -378,7 +396,9 @@ class MainActivity : Activity() {
         page.addView(text("ADMIN DASHBOARD", 23f, emerald, true))
         page.addView(text("Verified admin account", 14f, gold).apply { setPadding(0, dp(8), 0, dp(18)) })
         page.addView(text("Your account passed Supabase email/password sign-in and the is_media_admin permission check.", 14f, white))
+        page.addView(actionButton("Logo & Cover Image Settings") { showAppearanceSettings() }, LinearLayout.LayoutParams(-1, dp(50)))
         page.addView(actionButton("＋ Upload Media (In App)") { showUploadForm() }, LinearLayout.LayoutParams(-1, dp(50)))
+        page.addView(actionButton("✎ Edit Existing Posts") { showEditExistingPosts() }, LinearLayout.LayoutParams(-1, dp(50)))
         val webTools = actionButton("Open Full Admin Tools (Website)") { openAdminWebsite("Admin tools") }
         val webParams = LinearLayout.LayoutParams(-1, dp(50))
         webParams.topMargin = dp(10)
@@ -390,6 +410,68 @@ class MainActivity : Activity() {
         setContentView(page)
     }
 
+
+    private fun showEditExistingPosts() {
+        val session = adminSession ?: run { showAdminLogin(); return }
+        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(18), dp(18), dp(20)); setBackgroundColor(black) }
+        page.addView(text("EDIT EXISTING POSTS", 22f, emerald, true))
+        page.addView(text("Title, description aur poster/thumbnail badlein. Likes, comments, views aur original media safe rahenge.", 13f, gold).apply { setPadding(0, dp(8), 0, dp(14)) })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val status = text("Posts load ho rahi hain...", 13f, gold)
+        page.addView(status); page.addView(list)
+        page.addView(actionButton("Back to Admin Dashboard") { showAdminPage() }, LinearLayout.LayoutParams(-1, dp(50)))
+        setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
+        SupabaseClient.getMediaItems { result ->
+            if (isFinishing || isDestroyed) return@getMediaItems
+            result.onSuccess { items ->
+                status.text = if (items.isEmpty()) "Koi post nahi mili." else "Post select karein:"
+                list.removeAllViews()
+                items.forEach { item ->
+                    val row = actionButton("✎  ${item.title.ifBlank { "Untitled post" }}  ·  ${item.mediaType}") {
+                        showEditPostForm(item)
+                    }
+                    val lp = LinearLayout.LayoutParams(-1, dp(54)); lp.topMargin = dp(6); list.addView(row, lp)
+                }
+            }.onFailure { status.text = "Posts load nahi huin: ${it.message}" }
+        }
+    }
+
+    private fun showEditPostForm(item: MediaItem) {
+        val session = adminSession ?: run { showAdminLogin(); return }
+        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(18), dp(18), dp(22)); setBackgroundColor(black) }
+        page.addView(text("EDIT POST", 22f, emerald, true))
+        val titleField = EditText(this).apply { setText(item.title); hint = "Post title"; setTextColor(white); setHintTextColor(Color.LTGRAY); background = rounded(panel, emerald); setPadding(dp(12), dp(10), dp(12), dp(10)) }
+        val descField = EditText(this).apply { setText(item.description); hint = "Description"; minLines = 3; gravity = Gravity.TOP; setTextColor(white); setHintTextColor(Color.LTGRAY); background = rounded(panel, emerald); setPadding(dp(12), dp(10), dp(12), dp(10)) }
+        val posterStatus = text(if (item.posterPath.isBlank()) "Current poster: none" else "Current poster is set. Choose a new image to replace it.", 13f, gold)
+        var posterUri: Uri? = null
+        val saveStatus = text("", 13f, gold)
+        fun add(v: View) { page.addView(v, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) }) }
+        add(text("Title", 13f, gold)); add(titleField); add(text("Description", 13f, gold)); add(descField)
+        add(text("Thumbnail / Poster", 13f, gold))
+        add(actionButton("Choose New Poster from Gallery") {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "image/*" }
+            startActivityForResult(intent, PICK_EDIT_POSTER_FILE)
+        })
+        add(posterStatus)
+        add(actionButton("Save Changes") {
+            val newTitle = titleField.text.toString().trim()
+            if (newTitle.isBlank()) { titleField.error = "Title zaroori hai"; return@actionButton }
+            saveStatus.text = "Saving..."
+            SupabaseClient.updateMediaDetails(this, session, item.id, newTitle, descField.text.toString().trim(), posterUri) { result ->
+                if (isFinishing || isDestroyed) return@updateMediaDetails
+                result.onSuccess {
+                    saveStatus.text = "Post update ho gayi. Website aur app dono par changes nazar aayenge."
+                    Toast.makeText(this, "Post updated successfully.", Toast.LENGTH_LONG).show()
+                    showEditExistingPosts()
+                }.onFailure { saveStatus.text = "Update failed: ${it.message}" }
+            }
+        })
+        add(saveStatus)
+        add(actionButton("Back to Posts") { showEditExistingPosts() })
+        add(actionButton("Back to Admin Dashboard") { showAdminPage() })
+        setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
+        pendingEditPoster = { uri -> posterUri = uri; posterStatus.text = "New poster selected. Save Changes dabayein." }
+    }
 
     private fun showUploadForm() {
         if (adminSession == null) {
@@ -418,9 +500,12 @@ class MainActivity : Activity() {
         }
         val titleField = edit("Media title")
         val descriptionField = edit("Description (optional)", true)
+        val promptField = edit("Prompt text (for Prompt categories)", true)
+        val uploadCategories = listOf(
+            "Video Songs", "Video Tutorial", "Video Prompt", "Image Prompt", "Presets & Assets"
+        )
         val category = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
-                listOf("Movie", "Trailer", "Image", "Audio"))
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, uploadCategories)
         }
         val mediaLabel = text("No media file selected", 13f, Color.LTGRAY)
         val posterLabel = text("Poster: optional", 13f, Color.LTGRAY)
@@ -432,6 +517,7 @@ class MainActivity : Activity() {
         }
         add(titleField, 12)
         add(descriptionField)
+        add(promptField)
         add(text("Category", 13f, gold), 12)
         add(category)
         add(actionButton("Choose Media File") {
@@ -451,17 +537,32 @@ class MainActivity : Activity() {
             val session = adminSession
             val mediaUri = selectedUploadUri
             if (session == null) { status.text = "Admin session nahi mili. Dobara login karein."; return@actionButton }
-            if (mediaUri == null) { status.text = "Pehle media file select karein."; return@actionButton }
             val titleValue = titleField.text.toString().trim()
+            val promptValue = promptField.text.toString().trim()
             if (titleValue.isBlank()) { titleField.error = "Title zaroori hai"; return@actionButton }
-            val mediaType = when (category.selectedItemPosition) {
-                0 -> "movie"; 1 -> "trailer"; 2 -> "image"; else -> "audio"
+            val selectedCategory = category.selectedItemPosition
+            val requiresMediaFile = selectedCategory == 0 || selectedCategory == 1 || selectedCategory == 4
+            if (requiresMediaFile && mediaUri == null) {
+                status.text = "Is category ke liye media file select karein."
+                return@actionButton
+            }
+            if ((selectedCategory == 2 || selectedCategory == 3) && promptValue.isBlank()) {
+                promptField.error = "Prompt text likhein"
+                status.text = "Prompt categories ke liye prompt text zaroori hai."
+                return@actionButton
+            }
+            val mediaType = when (selectedCategory) {
+                0 -> "song"
+                1 -> "tutorial"
+                2 -> "video_prompt"
+                3 -> "image_prompt"
+                else -> "image"
             }
             uploadButton.isEnabled = false
             uploadButton.text = "Uploading..."
             status.text = "File upload ho rahi hai. App band na karein..."
             SupabaseClient.uploadMedia(this, session, mediaUri, selectedPosterUri,
-                titleValue, descriptionField.text.toString().trim(), mediaType) { result ->
+                titleValue, descriptionField.text.toString().trim(), mediaType, promptValue) { result ->
                 if (isFinishing || isDestroyed) return@uploadMedia
                 uploadButton.isEnabled = true
                 uploadButton.text = "Upload to Supabase"
@@ -473,6 +574,7 @@ class MainActivity : Activity() {
                     posterLabel.text = "Poster: optional"
                     titleField.text.clear()
                     descriptionField.text.clear()
+                    promptField.text.clear()
                     Toast.makeText(this, "Media upload ho gaya.", Toast.LENGTH_LONG).show()
                 }.onFailure { e ->
                     status.text = "Upload failed: ${e.message}"
@@ -498,11 +600,76 @@ class MainActivity : Activity() {
                 selectedUploadUri = uri
                 Toast.makeText(this, "Media file select ho gayi.", Toast.LENGTH_SHORT).show()
             }
+            PICK_EDIT_POSTER_FILE -> {
+                pendingEditPoster?.invoke(uri)
+                pendingEditPoster = null
+            }
             PICK_POSTER_FILE -> {
                 selectedPosterUri = uri
                 Toast.makeText(this, "Poster select ho gaya.", Toast.LENGTH_SHORT).show()
             }
+            PICK_APPEARANCE_IMAGE -> {
+                val session = adminSession ?: run { showAdminLogin(); return }
+                val kind = selectedAppearanceKind
+                Toast.makeText(this, "Image upload ho rahi hai...", Toast.LENGTH_SHORT).show()
+                SupabaseClient.updateAppearanceSetting(this, session, uri, kind) { result ->
+                    result.onSuccess {
+                        appearanceSettings = it
+                        Toast.makeText(this, "Image website aur app dono par update ho gayi.", Toast.LENGTH_LONG).show()
+                        showAppearanceSettings()
+                    }.onFailure {
+                        Toast.makeText(this, it.message ?: "Image update nahi ho saki.", Toast.LENGTH_LONG).show()
+                        showAppearanceSettings()
+                    }
+                }
+            }
         }
+    }
+
+
+    private fun loadAppearanceImage(imageUrl: String, target: ImageView) {
+        if (imageUrl.isBlank()) return
+        imageExecutor.execute {
+            val bitmap = runCatching {
+                val connection = URL(imageUrl).openConnection() as HttpURLConnection
+                try {
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.inputStream.use { BitmapFactory.decodeStream(it) }
+                } finally { connection.disconnect() }
+            }.getOrNull()
+            if (bitmap != null) mainHandler.post { if (!isFinishing && !isDestroyed) target.setImageBitmap(bitmap) }
+        }
+    }
+
+    private fun showAppearanceSettings() {
+        if (adminSession == null) {
+            Toast.makeText(this, "Logo aur cover badalne ke liye Admin Login karein.", Toast.LENGTH_LONG).show()
+            showAdminLogin()
+            return
+        }
+        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(18), dp(18), dp(22)); setBackgroundColor(black) }
+        page.addView(text("LOGO & COVER IMAGE", 22f, emerald, true))
+        page.addView(text("Gallery se image choose karein. Website aur app dono par shared rahegi.", 13f, gold).apply { setPadding(0, dp(8), 0, dp(16)) })
+        val logoPreview = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = rounded(panel, emerald) }
+        page.addView(text("App Logo", 15f, white, true))
+        page.addView(logoPreview, LinearLayout.LayoutParams(dp(92), dp(92)).apply { topMargin = dp(8); bottomMargin = dp(8) })
+        loadAppearanceImage(appearanceSettings.logoUrl, logoPreview)
+        page.addView(actionButton("Choose Logo from Gallery") {
+            selectedAppearanceKind = "logoUrl"
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "image/*" }, PICK_APPEARANCE_IMAGE)
+        }, LinearLayout.LayoutParams(-1, dp(50)))
+        val coverPreview = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = rounded(panel, emerald) }
+        page.addView(text("Cover Image", 15f, white, true).apply { setPadding(0, dp(12), 0, dp(4)) })
+        page.addView(coverPreview, LinearLayout.LayoutParams(-1, dp(130)).apply { topMargin = dp(8); bottomMargin = dp(8) })
+        loadAppearanceImage(appearanceSettings.coverUrl, coverPreview)
+        page.addView(actionButton("Choose Cover from Gallery") {
+            selectedAppearanceKind = "coverUrl"
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "image/*" }, PICK_APPEARANCE_IMAGE)
+        }, LinearLayout.LayoutParams(-1, dp(50)))
+        page.addView(actionButton("Back to Admin Dashboard") { showAdminPage() }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(18) })
+        page.addView(actionButton("Back to Home") { showHome() }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(8) })
+        setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
     }
 
     private fun openAdminWebsite(label: String) {
@@ -835,6 +1002,7 @@ class MainActivity : Activity() {
             }
 
             addEngagementControls(card, item, url)
+                addAdminDeleteButton(card, item)
             if (adminSession != null) {
                 val deleteButton = actionButton("🗑 Delete Post") {
                     android.app.AlertDialog.Builder(this)
@@ -1341,6 +1509,7 @@ class MainActivity : Activity() {
                 }
 
                 addEngagementControls(card, item, url)
+                addAdminDeleteButton(card, item)
 
                 val params = LinearLayout.LayoutParams(-1, -2)
                 params.setMargins(0, 0, 0, dp(12))
@@ -1456,6 +1625,42 @@ class MainActivity : Activity() {
         }
         card.addView(actions)
         loadEngagement(item, stats)
+    }
+
+    private fun addAdminDeleteButton(card: LinearLayout, item: MediaItem) {
+        val session = adminSession ?: return
+        lateinit var delete: Button
+        delete = actionButton("🗑 Delete Post") {
+            val currentSession = adminSession
+            if (currentSession == null) {
+                Toast.makeText(this, "Admin dobara login karein.", Toast.LENGTH_LONG).show()
+                return@actionButton
+            }
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Delete post?")
+                .setMessage("“${item.title.ifBlank { "Untitled Post" }}” ko website aur app dono se delete karna hai?")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Delete") { _, _ ->
+                    delete.isEnabled = false
+                    delete.text = "Deleting..."
+                    SupabaseClient.deleteMedia(currentSession, item) { result ->
+                        if (isFinishing || isDestroyed) return@deleteMedia
+                        result.onSuccess {
+                            allMediaItems = allMediaItems.filterNot { it.id == item.id }
+                            Toast.makeText(this, "Post delete ho gayi.", Toast.LENGTH_LONG).show()
+                            if (selectedCategory == "Home") loadMediaItems() else showCategory(selectedCategory)
+                        }.onFailure { error ->
+                            delete.isEnabled = true
+                            delete.text = "🗑 Delete Post"
+                            Toast.makeText(this, "Delete nahi hua: ${error.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                .show()
+        }
+        val params = LinearLayout.LayoutParams(-1, dp(46))
+        params.topMargin = dp(8)
+        card.addView(delete, params)
     }
 
     private fun loadEngagement(item: MediaItem, stats: TextView) {

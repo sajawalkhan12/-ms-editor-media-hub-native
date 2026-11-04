@@ -207,6 +207,65 @@ object SupabaseClient {
         } finally { connection.disconnect() }
     }
 
+    fun updateMediaDetails(
+        context: android.content.Context,
+        session: AdminSession,
+        mediaId: String,
+        title: String,
+        description: String,
+        posterUri: android.net.Uri?,
+        callback: (Result<Unit>) -> Unit
+    ) {
+        executor.execute {
+            val result = runCatching {
+                require(session.accessToken.isNotBlank()) { "Admin session expire ho gayi. Dobara login karein." }
+                require(title.isNotBlank()) { "Title zaroori hai." }
+                var posterPath: String? = null
+                if (posterUri != null) {
+                    val resolver = context.contentResolver
+                    val mime = resolver.getType(posterUri) ?: "image/jpeg"
+                    require(mime.startsWith("image/")) { "Sirf image poster select karein." }
+                    val displayName = try {
+                        resolver.query(posterUri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                            if (it.moveToFirst()) it.getString(0) else null
+                        }
+                    } catch (_: Exception) { null } ?: "poster.jpg"
+                    val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                    val objectPath = "posters/${session.userId}/${java.util.UUID.randomUUID()}_$safeName"
+                    val encoded = objectPath.split("/").joinToString("/") {
+                        URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                    }
+                    val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                    val upload = URL("$base/storage/v1/object/media/$encoded").openConnection() as HttpURLConnection
+                    try {
+                        upload.requestMethod = "POST"
+                        upload.connectTimeout = 30000
+                        upload.readTimeout = 120000
+                        upload.doOutput = true
+                        upload.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                        upload.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                        upload.setRequestProperty("Content-Type", mime)
+                        upload.setRequestProperty("x-upsert", "false")
+                        resolver.openInputStream(posterUri)?.use { input ->
+                            upload.outputStream.use { output -> input.copyTo(output, 64 * 1024) }
+                        } ?: throw Exception("Poster image read nahi ho saki.")
+                        val code = upload.responseCode
+                        val raw = (if (code in 200..299) upload.inputStream else upload.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+                        if (code !in 200..299) throw Exception("Poster upload HTTP $code: $raw")
+                    } finally { upload.disconnect() }
+                    posterPath = objectPath
+                }
+                val body = JSONObject().put("title", title).put("description", description).apply {
+                    if (posterPath != null) put("poster_path", posterPath)
+                }.toString()
+                val id = URLEncoder.encode(mediaId, "UTF-8")
+                adminRequest(session, "PATCH", "media_items?id=eq.$id", body)
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
     fun deleteMedia(session: AdminSession, item: MediaItem, callback: (Result<Unit>) -> Unit) {
         executor.execute {
             val result = runCatching {

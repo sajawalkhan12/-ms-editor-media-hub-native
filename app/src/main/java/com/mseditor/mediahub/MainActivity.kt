@@ -59,6 +59,8 @@ class MainActivity : Activity() {
     private var adminSession: SupabaseClient.AdminSession? = null
     private val PICK_MEDIA_FILE = 4101
     private val PICK_POSTER_FILE = 4102
+    private val PICK_EDIT_POSTER_FILE = 4104
+    private var pendingEditPoster: ((Uri) -> Unit)? = null
     private val PICK_APPEARANCE_IMAGE = 4103
     private var selectedAppearanceKind = "logoUrl"
     private var appearanceSettings = SupabaseClient.AppearanceSettings()
@@ -396,6 +398,7 @@ class MainActivity : Activity() {
         page.addView(text("Your account passed Supabase email/password sign-in and the is_media_admin permission check.", 14f, white))
         page.addView(actionButton("Logo & Cover Image Settings") { showAppearanceSettings() }, LinearLayout.LayoutParams(-1, dp(50)))
         page.addView(actionButton("＋ Upload Media (In App)") { showUploadForm() }, LinearLayout.LayoutParams(-1, dp(50)))
+        page.addView(actionButton("✎ Edit Existing Posts") { showEditExistingPosts() }, LinearLayout.LayoutParams(-1, dp(50)))
         val webTools = actionButton("Open Full Admin Tools (Website)") { openAdminWebsite("Admin tools") }
         val webParams = LinearLayout.LayoutParams(-1, dp(50))
         webParams.topMargin = dp(10)
@@ -407,6 +410,68 @@ class MainActivity : Activity() {
         setContentView(page)
     }
 
+
+    private fun showEditExistingPosts() {
+        val session = adminSession ?: run { showAdminLogin(); return }
+        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(18), dp(18), dp(20)); setBackgroundColor(black) }
+        page.addView(text("EDIT EXISTING POSTS", 22f, emerald, true))
+        page.addView(text("Title, description aur poster/thumbnail badlein. Likes, comments, views aur original media safe rahenge.", 13f, gold).apply { setPadding(0, dp(8), 0, dp(14)) })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val status = text("Posts load ho rahi hain...", 13f, gold)
+        page.addView(status); page.addView(list)
+        page.addView(actionButton("Back to Admin Dashboard") { showAdminPage() }, LinearLayout.LayoutParams(-1, dp(50)))
+        setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
+        SupabaseClient.getMediaItems { result ->
+            if (isFinishing || isDestroyed) return@getMediaItems
+            result.onSuccess { items ->
+                status.text = if (items.isEmpty()) "Koi post nahi mili." else "Post select karein:"
+                list.removeAllViews()
+                items.forEach { item ->
+                    val row = actionButton("✎  ${item.title.ifBlank { "Untitled post" }}  ·  ${item.mediaType}") {
+                        showEditPostForm(item)
+                    }
+                    val lp = LinearLayout.LayoutParams(-1, dp(54)); lp.topMargin = dp(6); list.addView(row, lp)
+                }
+            }.onFailure { status.text = "Posts load nahi huin: ${it.message}" }
+        }
+    }
+
+    private fun showEditPostForm(item: MediaItem) {
+        val session = adminSession ?: run { showAdminLogin(); return }
+        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(18), dp(18), dp(22)); setBackgroundColor(black) }
+        page.addView(text("EDIT POST", 22f, emerald, true))
+        val titleField = EditText(this).apply { setText(item.title); hint = "Post title"; setTextColor(white); setHintTextColor(Color.LTGRAY); background = rounded(panel, emerald); setPadding(dp(12), dp(10), dp(12), dp(10)) }
+        val descField = EditText(this).apply { setText(item.description); hint = "Description"; minLines = 3; gravity = Gravity.TOP; setTextColor(white); setHintTextColor(Color.LTGRAY); background = rounded(panel, emerald); setPadding(dp(12), dp(10), dp(12), dp(10)) }
+        val posterStatus = text(if (item.posterPath.isBlank()) "Current poster: none" else "Current poster is set. Choose a new image to replace it.", 13f, gold)
+        var posterUri: Uri? = null
+        val saveStatus = text("", 13f, gold)
+        fun add(v: View) { page.addView(v, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) }) }
+        add(text("Title", 13f, gold)); add(titleField); add(text("Description", 13f, gold)); add(descField)
+        add(text("Thumbnail / Poster", 13f, gold))
+        add(actionButton("Choose New Poster from Gallery") {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "image/*" }
+            startActivityForResult(intent, PICK_EDIT_POSTER_FILE)
+        })
+        add(posterStatus)
+        add(actionButton("Save Changes") {
+            val newTitle = titleField.text.toString().trim()
+            if (newTitle.isBlank()) { titleField.error = "Title zaroori hai"; return@actionButton }
+            saveStatus.text = "Saving..."
+            SupabaseClient.updateMediaDetails(this, session, item.id, newTitle, descField.text.toString().trim(), posterUri) { result ->
+                if (isFinishing || isDestroyed) return@updateMediaDetails
+                result.onSuccess {
+                    saveStatus.text = "Post update ho gayi. Website aur app dono par changes nazar aayenge."
+                    Toast.makeText(this, "Post updated successfully.", Toast.LENGTH_LONG).show()
+                    showEditExistingPosts()
+                }.onFailure { saveStatus.text = "Update failed: ${it.message}" }
+            }
+        })
+        add(saveStatus)
+        add(actionButton("Back to Posts") { showEditExistingPosts() })
+        add(actionButton("Back to Admin Dashboard") { showAdminPage() })
+        setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
+        pendingEditPoster = { uri -> posterUri = uri; posterStatus.text = "New poster selected. Save Changes dabayein." }
+    }
 
     private fun showUploadForm() {
         if (adminSession == null) {
@@ -534,6 +599,10 @@ class MainActivity : Activity() {
             PICK_MEDIA_FILE -> {
                 selectedUploadUri = uri
                 Toast.makeText(this, "Media file select ho gayi.", Toast.LENGTH_SHORT).show()
+            }
+            PICK_EDIT_POSTER_FILE -> {
+                pendingEditPoster?.invoke(uri)
+                pendingEditPoster = null
             }
             PICK_POSTER_FILE -> {
                 selectedPosterUri = uri

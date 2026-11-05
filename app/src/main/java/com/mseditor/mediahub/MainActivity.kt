@@ -888,6 +888,17 @@ class MainActivity : Activity() {
         identity.addView(identityText, LinearLayout.LayoutParams(0, -2, 1f))
         page.addView(identity)
 
+        val profileBioText = text("", 13f, Color.LTGRAY).apply {
+            setPadding(dp(8), dp(4), dp(8), dp(2))
+            visibility = View.GONE
+        }
+        val profileLocationText = text("", 12f, Color.LTGRAY).apply {
+            setPadding(dp(8), dp(2), dp(8), dp(8))
+            visibility = View.GONE
+        }
+        page.addView(profileBioText)
+        page.addView(profileLocationText)
+
         val ownPosts = allMediaItems.filter { it.createdBy == profileUserId }
         val stats = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1037,8 +1048,10 @@ class MainActivity : Activity() {
                     cleanDisplayName.equals(cleanUsername, ignoreCase = true)
                 ) View.GONE else View.VISIBLE
                 username.text = if (cleanUsername.isBlank()) "@username" else "@$cleanUsername"
-                bio.setText(profile.bio)
-                location.setText(profile.location)
+                profileBioText.text = profile.bio
+                profileBioText.visibility = if (profile.bio.isBlank()) View.GONE else View.VISIBLE
+                profileLocationText.text = if (profile.location.isBlank()) "" else "📍 ${profile.location}"
+                profileLocationText.visibility = if (profile.location.isBlank()) View.GONE else View.VISIBLE
                 followersStat.getChildAt(0).let { (it as? TextView)?.text = profile.followers.toString() }
                 followingStat.getChildAt(0).let { (it as? TextView)?.text = profile.following.toString() }
                 loadProfileImage(avatar, profileAvatarPath)

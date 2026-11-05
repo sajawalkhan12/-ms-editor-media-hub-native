@@ -229,15 +229,6 @@ class MainActivity : Activity() {
         header.addView(brand)
         loadHeaderLogo(brandLogo)
 
-        // Private admin shortcut: tap the small camera icon and enter the access code.
-        val hiddenAdminIcon = text("📷", 21f, gold, true).apply {
-            gravity = Gravity.CENTER
-            contentDescription = "Private admin access"
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            setOnClickListener { showHiddenAdminGate() }
-        }
-        header.addView(hiddenAdminIcon)
-
         val settings = text("⚙", 27f, gold, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(5), dp(12), dp(5))
@@ -462,39 +453,7 @@ class MainActivity : Activity() {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
             setTextColor(white)
             setHintTextColor(Color.LTGRAY)
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = rounded(panel, emerald)
-        }
-        val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle("Private Admin Access")
-            .setMessage("Admin page kholne ke liye access code enter karein.")
-            .setView(codeField)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Continue", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                if (codeField.text.toString() == "558800") {
-                    dialog.dismiss()
-                    showAdminLogin()
-                } else {
-                    codeField.error = "Incorrect access code"
-                    codeField.text.clear()
-                }
-            }
-        }
-        dialog.show()
-    }
-
-    private fun showAdminLogin() {
-        val page = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(28), dp(22), dp(24))
-            setBackgroundColor(black)
-        }
-        page.addView(text("MS EDITOR MEDIA HUB", 16f, gold, true))
-        page.addView(text("ADMIN LOGIN", 25f, emerald, true).apply {
-            setPadding(0, dp(22), 0, dp(8))
+            setPadding(dp(14), dp(12), dp(14), dp(18))
         })
         page.addView(text("Yeh private admin page hai. Sirf approved admin account ko access milega.", 14f, Color.LTGRAY))
         val email = EditText(this).apply {

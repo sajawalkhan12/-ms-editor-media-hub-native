@@ -202,19 +202,25 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
-
-        val brandTitle = text("MS EDITOR MEDIA HUB", 19f, emerald, true)
+        val brandRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val brandTitle = text("MS EDITOR MEDIA HUB", 16f, emerald, true)
         val brandLogo = ImageView(this).apply {
             visibility = View.GONE
             scaleType = ImageView.ScaleType.FIT_CENTER
             adjustViewBounds = true
             contentDescription = "MS Editor Media Hub logo"
         }
-        brand.addView(brandLogo, LinearLayout.LayoutParams(dp(180), dp(48)))
-        brand.addView(brandTitle)
+        brandRow.addView(brandLogo, LinearLayout.LayoutParams(dp(32), dp(32)).apply {
+            rightMargin = dp(7)
+        })
+        brandRow.addView(brandTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        brand.addView(brandRow)
         brand.addView(text("Video Songs • Tutorials • Prompts", 12f, gold))
         header.addView(brand)
-        loadHeaderLogo(brandLogo, brandTitle)
+        loadHeaderLogo(brandLogo)
 
         val settings = text("⚙", 27f, gold, true).apply {
             gravity = Gravity.CENTER
@@ -339,13 +345,12 @@ class MainActivity : Activity() {
         loadMediaItems()
     }
 
-    private fun loadHeaderLogo(target: ImageView, fallback: View) {
+    private fun loadHeaderLogo(target: ImageView) {
         SupabaseClient.getAppLogo { result ->
             if (isFinishing || isDestroyed) return@getAppLogo
             val logoUrl = result.getOrNull().orEmpty()
             if (logoUrl.isBlank()) {
                 target.visibility = View.GONE
-                fallback.visibility = View.VISIBLE
                 return@getAppLogo
             }
             imageExecutor.execute {
@@ -364,7 +369,6 @@ class MainActivity : Activity() {
                     if (!isFinishing && !isDestroyed && bitmap != null) {
                         target.setImageBitmap(bitmap)
                         target.visibility = View.VISIBLE
-                        fallback.visibility = View.GONE
                     }
                 }
             }

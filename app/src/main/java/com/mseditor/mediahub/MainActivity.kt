@@ -1439,6 +1439,83 @@ class MainActivity : Activity() {
                 background = rounded(panel, emerald)
             }
 
+            val isMemberPost = item.storagePath.startsWith("user-posts/")
+            if (isMemberPost) {
+                val authorRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, 0, 0, dp(10))
+                }
+                val authorAvatar = ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(black)
+                        setStroke(dp(1), emerald)
+                    }
+                    clipToOutline = true
+                    contentDescription = "Post owner profile photo"
+                }
+                authorRow.addView(authorAvatar, LinearLayout.LayoutParams(dp(42), dp(42)))
+                if (item.profileAvatarPath.isNotBlank()) loadProfileImage(authorAvatar, item.profileAvatarPath)
+                else authorAvatar.setImageResource(android.R.drawable.ic_menu_myplaces)
+                val authorName = item.profileDisplayName.trim().ifBlank {
+                    item.profileUsername.trim().removePrefix("@")
+                }.ifBlank { "User" }
+                val usernameLabel = "@" + item.profileUsername.trim().removePrefix("@").ifBlank { "user" }
+                authorRow.addView(text("$authorName\n$usernameLabel", 13f, white, true)
+                    .apply { setPadding(dp(9), 0, dp(8), 0) }, LinearLayout.LayoutParams(0, -2, 1f))
+
+                val sessionPrefs = getSharedPreferences("auth_session", MODE_PRIVATE)
+                val viewerId = sessionPrefs.getString("user_id", "").orEmpty()
+                val viewerToken = sessionPrefs.getString("access_token", "").orEmpty()
+                if (viewerId.isNotBlank() && viewerId != item.createdBy) {
+                    val followButton = Button(this).apply {
+                        text = "Follow"
+                        textSize = 11f
+                        isAllCaps = false
+                        minWidth = 0; minimumWidth = 0
+                        minHeight = 0; minimumHeight = 0
+                        setPadding(dp(9), 0, dp(9), 0)
+                        setTextColor(white)
+                        background = rounded(black, emerald)
+                        isEnabled = false
+                    }
+                    var isFollowing = false
+                    SupabaseClient.isFollowing(viewerToken, viewerId, item.createdBy) { followed ->
+                        if (!isFinishing && !isDestroyed) {
+                            isFollowing = followed
+                            followButton.text = if (followed) "Following" else "Follow"
+                            followButton.isEnabled = true
+                        }
+                    }
+                    followButton.setOnClickListener {
+                        followButton.isEnabled = false
+                        SupabaseClient.toggleFollow(viewerToken, viewerId, item.createdBy, isFollowing) { result ->
+                            if (isFinishing || isDestroyed) return@toggleFollow
+                            result.onSuccess { nowFollowing ->
+                                isFollowing = nowFollowing
+                                followButton.text = if (nowFollowing) "Following" else "Follow"
+                            }.onFailure { error ->
+                                Toast.makeText(this, "Follow update nahi hua: ${error.message}", Toast.LENGTH_LONG).show()
+                            }
+                            followButton.isEnabled = true
+                        }
+                    }
+                    authorRow.addView(followButton, LinearLayout.LayoutParams(-2, dp(38)))
+                }
+                if (viewerId.isNotBlank() && viewerId == item.createdBy) {
+                    val more = text("⋮", 26f, gold, true).apply {
+                        gravity = Gravity.CENTER
+                        setPadding(dp(10), 0, dp(4), 0)
+                        setOnClickListener { showUserPostMenu(item) }
+                        contentDescription = "Edit or delete your post"
+                    }
+                    authorRow.addView(more, LinearLayout.LayoutParams(dp(38), dp(42)))
+                }
+                card.addView(authorRow)
+            }
+
             card.addView(
                 text(
                     item.title.ifBlank { "Untitled Post" },
@@ -1522,6 +1599,91 @@ class MainActivity : Activity() {
             params.setMargins(0, 0, 0, dp(12))
             postsContainer.addView(card, params)
         }
+    }
+
+    private fun showUserPostMenu(item: MediaItem) {
+        val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
+        val token = prefs.getString("access_token", "").orEmpty()
+        val userId = prefs.getString("user_id", "").orEmpty()
+        if (token.isBlank() || userId != item.createdBy) {
+            Toast.makeText(this, "Sirf apni post edit ya delete kar sakte hain.", Toast.LENGTH_LONG).show()
+            return
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Your Post")
+            .setItems(arrayOf("✏ Edit Post", "🗑 Delete Post")) { _, which ->
+                if (which == 0) editUserPost(item, token, userId)
+                else android.app.AlertDialog.Builder(this)
+                    .setTitle("Delete post?")
+                    .setMessage("Yeh post permanently delete ho jayegi. Kya aap sure hain?")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Delete") { _, _ ->
+                        SupabaseClient.deleteUserPost(token, userId, item) { result ->
+                            if (isFinishing || isDestroyed) return@deleteUserPost
+                            result.onSuccess {
+                                Toast.makeText(this, "Aapki post delete ho gayi.", Toast.LENGTH_SHORT).show()
+                                loadMediaItems()
+                            }.onFailure { error ->
+                                Toast.makeText(this, "Delete failed: ${error.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }.show()
+            }.show()
+    }
+
+    private fun editUserPost(item: MediaItem, token: String, userId: String) {
+        val editor = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), 0)
+        }
+        val titleField = EditText(this).apply {
+            setText(item.title)
+            hint = "Post title"
+            setTextColor(white)
+            setHintTextColor(Color.LTGRAY)
+            background = rounded(panel, emerald)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        val descriptionField = EditText(this).apply {
+            setText(item.description)
+            hint = "Description"
+            minLines = 3
+            gravity = Gravity.TOP
+            setTextColor(white)
+            setHintTextColor(Color.LTGRAY)
+            background = rounded(panel, emerald)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        editor.addView(titleField, LinearLayout.LayoutParams(-1, dp(48)))
+        editor.addView(descriptionField, LinearLayout.LayoutParams(-1, dp(100)).apply { topMargin = dp(10) })
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Edit Your Post")
+            .setView(editor)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val title = titleField.text.toString().trim()
+                if (title.isBlank()) {
+                    titleField.error = "Title zaroori hai"
+                    return@setOnClickListener
+                }
+                dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).isEnabled = false
+                SupabaseClient.updateUserPost(token, userId, item.id, title, descriptionField.text.toString().trim()) { result ->
+                    if (isFinishing || isDestroyed) return@updateUserPost
+                    result.onSuccess {
+                        dialog.dismiss()
+                        Toast.makeText(this, "Post update ho gayi.", Toast.LENGTH_SHORT).show()
+                        loadMediaItems()
+                    }.onFailure { error ->
+                        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).isEnabled = true
+                        Toast.makeText(this, "Edit failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun addViewPromptButton(

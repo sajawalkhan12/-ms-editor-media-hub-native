@@ -613,4 +613,126 @@ object SupabaseClient {
             "/storage/v1/object/public/media/" +
             encodedPath
     }
+
+    data class UserProfile(
+        val username: String = "",
+        val displayName: String = "",
+        val avatarPath: String = "",
+        val coverPath: String = "",
+        val bio: String = "",
+        val location: String = "",
+        val followers: Int = 0,
+        val following: Int = 0
+    )
+
+    private fun profileRequest(token: String, method: String, path: String, body: String? = null, storage: Boolean = false, mime: String = "application/json"): String {
+        val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+        val endpoint = if (storage) "$base/storage/v1/$path" else "$base/rest/v1/$path"
+        val connection = URL(endpoint).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = method
+            connection.connectTimeout = 20000
+            connection.readTimeout = 90000
+            connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("Accept", "application/json")
+            if (!storage) {
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.setRequestProperty("Accept-Profile", "public")
+                connection.setRequestProperty("Content-Profile", "public")
+                if (body != null) connection.setRequestProperty("Prefer", "resolution=merge-duplicates,return=minimal")
+            } else if (body != null) {
+                connection.setRequestProperty("Content-Type", mime)
+                connection.setRequestProperty("x-upsert", "false")
+            }
+            if (body != null) {
+                connection.doOutput = true
+                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw Exception("Profile request HTTP $code: $response")
+            return response
+        } finally { connection.disconnect() }
+    }
+
+    fun getUserProfile(token: String, userId: String, callback: (Result<UserProfile>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                val id = URLEncoder.encode(userId, "UTF-8")
+                val rows = JSONArray(profileRequest(token, "GET", "profiles?select=username,display_name,avatar_path,cover_path,bio,location&id=eq.$id"))
+                val row = if (rows.length() > 0) rows.getJSONObject(0) else JSONObject()
+                val followers = JSONArray(profileRequest(token, "GET", "user_follows?select=follower_id&following_id=eq.$id")).length()
+                val following = JSONArray(profileRequest(token, "GET", "user_follows?select=following_id&follower_id=eq.$id")).length()
+                UserProfile(
+                    row.optString("username"), row.optString("display_name"),
+                    row.optString("avatar_path"), row.optString("cover_path"),
+                    row.optString("bio"), row.optString("location"), followers, following
+                )
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun saveUserProfile(token: String, userId: String, bio: String, location: String, avatarPath: String, coverPath: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                val body = JSONObject()
+                    .put("id", userId)
+                    .put("bio", bio.take(500))
+                    .put("location", location.take(100))
+                    .put("avatar_path", avatarPath)
+                    .put("cover_path", coverPath)
+                    .put("updated_at", java.time.Instant.now().toString())
+                profileRequest(token, "POST", "profiles?on_conflict=id", body.toString())
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun uploadProfileImage(context: android.content.Context, token: String, userId: String, uri: android.net.Uri, kind: String, callback: (Result<String>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(kind == "avatar" || kind == "cover") { "Invalid profile image type." }
+                val resolver = context.contentResolver
+                val mime = resolver.getType(uri) ?: "image/jpeg"
+                require(mime in listOf("image/jpeg", "image/png", "image/webp", "image/gif")) { "JPG, PNG, WEBP ya GIF image select karein." }
+                val ext = when (mime) { "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
+                val path = "$userId/$kind-${java.util.UUID.randomUUID()}.$ext"
+                val encoded = path.split("/").joinToString("/") { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+                val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                val connection = URL("$base/storage/v1/object/profile-images/$encoded").openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 20000
+                    connection.readTimeout = 90000
+                    connection.doOutput = true
+                    connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    connection.setRequestProperty("Authorization", "Bearer $token")
+                    connection.setRequestProperty("Content-Type", mime)
+                    connection.setRequestProperty("x-upsert", "false")
+                    resolver.openInputStream(uri)?.use { input -> connection.outputStream.use { output -> input.copyTo(output, 64 * 1024) } }
+                        ?: throw Exception("Gallery image read nahi ho saki.")
+                    val code = connection.responseCode
+                    val response = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Image upload HTTP $code: $response")
+                } finally { connection.disconnect() }
+                path
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun getProfileImageUrl(path: String): String {
+        val clean = path.trim()
+        if (clean.isBlank()) return ""
+        if (clean.startsWith("https://") || clean.startsWith("http://")) return clean
+        val encoded = clean.removePrefix("/").split("/").joinToString("/") { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+        return SupabaseConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/profile-images/" + encoded
+    }
+
 }

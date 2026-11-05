@@ -461,6 +461,89 @@ object SupabaseClient {
     }
 
 
+
+    fun uploadUserPost(
+        context: android.content.Context,
+        token: String,
+        userId: String,
+        mediaUri: android.net.Uri,
+        mediaKind: String,
+        title: String,
+        description: String,
+        callback: (Result<Unit>) -> Unit
+    ) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                require(mediaKind == "image" || mediaKind == "video") { "Image ya video select karein." }
+                val resolver = context.contentResolver
+                val mime = resolver.getType(mediaUri) ?: "application/octet-stream"
+                require(if (mediaKind == "image") mime.startsWith("image/") else mime.startsWith("video/")) {
+                    "Selected file ka type sahi nahi hai."
+                }
+                val displayName = try {
+                    resolver.query(mediaUri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                        if (it.moveToFirst()) it.getString(0) else null
+                    }
+                } catch (_: Exception) { null } ?: if (mediaKind == "image") "image" else "video"
+                val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                val objectPath = "user-posts/$userId/${java.util.UUID.randomUUID()}_$safeName"
+                val encoded = objectPath.split("/").joinToString("/") {
+                    URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                }
+                val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                val upload = URL("$base/storage/v1/object/media/$encoded").openConnection() as HttpURLConnection
+                try {
+                    upload.requestMethod = "POST"
+                    upload.connectTimeout = 30000
+                    upload.readTimeout = 180000
+                    upload.doOutput = true
+                    upload.setChunkedStreamingMode(64 * 1024)
+                    upload.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    upload.setRequestProperty("Authorization", "Bearer $token")
+                    upload.setRequestProperty("Content-Type", mime)
+                    upload.setRequestProperty("x-upsert", "false")
+                    resolver.openInputStream(mediaUri)?.use { input ->
+                        upload.outputStream.use { output -> input.copyTo(output, 64 * 1024) }
+                    } ?: throw Exception("Selected file read nahi ho saki.")
+                    val uploadCode = upload.responseCode
+                    val uploadResponse = (if (uploadCode in 200..299) upload.inputStream else upload.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (uploadCode !in 200..299) throw Exception("Storage HTTP $uploadCode: $uploadResponse")
+                } finally { upload.disconnect() }
+
+                val body = JSONObject()
+                    .put("title", title.take(160))
+                    .put("description", description.take(2000))
+                    .put("media_type", if (mediaKind == "image") "image" else "movie")
+                    .put("storage_path", objectPath)
+                    .put("external_url", "")
+                    .put("poster_path", "")
+                    .put("created_by", userId)
+                    .toString()
+                val insert = URL("$base/rest/v1/media_items").openConnection() as HttpURLConnection
+                try {
+                    insert.requestMethod = "POST"
+                    insert.connectTimeout = 30000
+                    insert.readTimeout = 30000
+                    insert.doOutput = true
+                    insert.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    insert.setRequestProperty("Authorization", "Bearer $token")
+                    insert.setRequestProperty("Content-Type", "application/json")
+                    insert.setRequestProperty("Content-Profile", "public")
+                    insert.setRequestProperty("Prefer", "return=minimal")
+                    insert.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                    val code = insert.responseCode
+                    val response = (if (code in 200..299) insert.inputStream else insert.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Post record HTTP $code: $response")
+                } finally { insert.disconnect() }
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
     private const val APPEARANCE_SETTINGS_PATH = "appearance/site-settings.json"
 
     private fun publicAppearanceUrl(path: String): String {

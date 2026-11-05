@@ -226,21 +226,17 @@ class MainActivity : Activity() {
         brandRow.addView(brandTitle, LinearLayout.LayoutParams(0, -2, 1f))
         brand.addView(brandRow)
         brand.addView(text("Video Songs • Tutorials • Prompts", 12f, gold))
-        // Hidden admin access: tap the brand header 7 times within 2.5 seconds.
-        brandRow.setOnClickListener {
-            hiddenAdminTapCount++
-            hiddenAdminTapReset?.let { mainHandler.removeCallbacks(it) }
-            if (hiddenAdminTapCount >= 7) {
-                hiddenAdminTapCount = 0
-                hiddenAdminTapReset = null
-                showAdminLogin()
-            } else {
-                hiddenAdminTapReset = Runnable { hiddenAdminTapCount = 0 }
-                mainHandler.postDelayed(hiddenAdminTapReset!!, 2500L)
-            }
-        }
         header.addView(brand)
         loadHeaderLogo(brandLogo)
+
+        // Private admin shortcut: tap the small camera icon and enter the access code.
+        val hiddenAdminIcon = text("📷", 21f, gold, true).apply {
+            gravity = Gravity.CENTER
+            contentDescription = "Private admin access"
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setOnClickListener { showHiddenAdminGate() }
+        }
+        header.addView(hiddenAdminIcon)
 
         val settings = text("⚙", 27f, gold, true).apply {
             gravity = Gravity.CENTER
@@ -457,6 +453,37 @@ class MainActivity : Activity() {
             .setView(scroll)
             .setNegativeButton("Close", null)
             .show()
+    }
+
+    private fun showHiddenAdminGate() {
+        val codeField = EditText(this).apply {
+            hint = "Private access code"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            setTextColor(white)
+            setHintTextColor(Color.LTGRAY)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(panel, emerald)
+        }
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Private Admin Access")
+            .setMessage("Admin page kholne ke liye access code enter karein.")
+            .setView(codeField)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Continue", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (codeField.text.toString() == "558800") {
+                    dialog.dismiss()
+                    showAdminLogin()
+                } else {
+                    codeField.error = "Incorrect access code"
+                    codeField.text.clear()
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun showAdminLogin() {

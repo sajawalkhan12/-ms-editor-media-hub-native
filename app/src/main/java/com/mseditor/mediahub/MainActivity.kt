@@ -66,6 +66,14 @@ class MainActivity : Activity() {
     private val PICK_MEDIA_FILE = 4101
     private val PICK_POSTER_FILE = 4102
     private val PICK_LOGO_FILE = 4103
+    private val PICK_PROFILE_COVER = 4104
+    private val PICK_PROFILE_AVATAR = 4105
+    private var profileAvatarPath = ""
+    private var profileCoverPath = ""
+    private var profileAccessToken = ""
+    private var profileUserId = ""
+    private var profileBioField: EditText? = null
+    private var profileLocationField: EditText? = null
     private var selectedUploadUri: Uri? = null
     private var selectedPosterUri: Uri? = null
 
@@ -448,6 +456,8 @@ class MainActivity : Activity() {
             item("Cover Image & Logo") { openAdminWebsite("Admin appearance settings") }
             item("Upload Media") { showUploadForm() }
         }
+        section("ACCOUNT")
+        item("My Profile") { showProfilePage() }
         section("APP")
         item("Back to Home") { showHome() }
         item("Exit App") { finish() }
@@ -651,6 +661,218 @@ class MainActivity : Activity() {
         setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
     }
 
+
+    private fun showProfilePage() {
+        val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
+        profileAccessToken = prefs.getString("access_token", "").orEmpty()
+        profileUserId = prefs.getString("user_id", "").orEmpty()
+        if (profileAccessToken.isBlank() || profileUserId.isBlank()) {
+            startActivity(Intent(this, AuthActivity::class.java))
+            finish()
+            return
+        }
+
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(22))
+            setBackgroundColor(black)
+        }
+        val toolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        toolbar.addView(actionButton("‹ Back") { showHome() }, LinearLayout.LayoutParams(-2, dp(44)))
+        toolbar.addView(text("MY PROFILE", 19f, gold, true).apply {
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(0, dp(44), 1f))
+        page.addView(toolbar)
+
+        val coverFrame = FrameLayout(this).apply {
+            background = rounded(panel, gold)
+            clipToOutline = true
+        }
+        val coverView = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setBackgroundColor(panel)
+            contentDescription = "Profile cover image"
+        }
+        coverFrame.addView(coverView, FrameLayout.LayoutParams(-1, -1))
+        val coverButton = actionButton("📷 Change Cover") {
+            openProfileImagePicker(PICK_PROFILE_COVER)
+        }.apply {
+            textSize = 12f
+            setPadding(dp(10), dp(7), dp(10), dp(7))
+        }
+        coverFrame.addView(coverButton, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
+            setMargins(0, 0, dp(10), dp(10))
+        })
+        val coverParams = LinearLayout.LayoutParams(-1, dp(170))
+        coverParams.topMargin = dp(14)
+        page.addView(coverFrame, coverParams)
+
+        val avatarRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(12), 0, dp(8))
+        }
+        val avatar = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = rounded(panel, emerald)
+            clipToOutline = true
+            contentDescription = "Profile picture"
+        }
+        avatarRow.addView(avatar, LinearLayout.LayoutParams(dp(88), dp(88)))
+        val avatarAction = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+        }
+        avatarAction.addView(text("Profile Picture", 16f, white, true))
+        avatarAction.addView(actionButton("📷 Change DP") {
+            openProfileImagePicker(PICK_PROFILE_AVATAR)
+        }, LinearLayout.LayoutParams(-2, dp(42)))
+        avatarRow.addView(avatarAction)
+        page.addView(avatarRow)
+
+        val counts = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = rounded(panel, gold)
+            setPadding(dp(12), dp(14), dp(12), dp(14))
+        }
+        val followersValue = text("0", 20f, emerald, true).apply { gravity = Gravity.CENTER }
+        val followingValue = text("0", 20f, emerald, true).apply { gravity = Gravity.CENTER }
+        val followersLabel = text("Followers", 13f, white).apply { gravity = Gravity.CENTER }
+        val followingLabel = text("Following", 13f, white).apply { gravity = Gravity.CENTER }
+        val followersCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+        followersCol.addView(followersValue); followersCol.addView(followersLabel)
+        val followingCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+        followingCol.addView(followingValue); followingCol.addView(followingLabel)
+        counts.addView(followersCol, LinearLayout.LayoutParams(0, -2, 1f))
+        counts.addView(followingCol, LinearLayout.LayoutParams(0, -2, 1f))
+        val countParams = LinearLayout.LayoutParams(-1, -2)
+        countParams.topMargin = dp(10)
+        page.addView(counts, countParams)
+
+        page.addView(text("Bio", 14f, gold, true).apply { setPadding(0, dp(16), 0, dp(6)) })
+        val bio = EditText(this).apply {
+            hint = "Apne bare mein likhein..."
+            minLines = 3
+            maxLines = 5
+            gravity = Gravity.TOP
+            textSize = 14f
+            setTextColor(white)
+            setHintTextColor(Color.LTGRAY)
+            setPadding(dp(13), dp(12), dp(13), dp(12))
+            background = rounded(panel, emerald)
+        }
+        profileBioField = bio
+        page.addView(bio, LinearLayout.LayoutParams(-1, -2))
+
+        page.addView(text("Location", 14f, gold, true).apply { setPadding(0, dp(14), 0, dp(6)) })
+        val location = EditText(this).apply {
+            hint = "City, Country"
+            setSingleLine(true)
+            textSize = 14f
+            setTextColor(white)
+            setHintTextColor(Color.LTGRAY)
+            setPadding(dp(13), dp(12), dp(13), dp(12))
+            background = rounded(panel, emerald)
+        }
+        profileLocationField = location
+        page.addView(location, LinearLayout.LayoutParams(-1, dp(48)))
+
+        val save = actionButton("SAVE PROFILE") {
+            val b = bio.text.toString().trim()
+            val l = location.text.toString().trim()
+            Toast.makeText(this, "Profile save ho raha hai...", Toast.LENGTH_SHORT).show()
+            SupabaseClient.saveUserProfile(profileAccessToken, profileUserId, b, l, profileAvatarPath, profileCoverPath) { result ->
+                if (isFinishing || isDestroyed) return@saveUserProfile
+                result.onSuccess {
+                    Toast.makeText(this, "Profile save ho gaya.", Toast.LENGTH_LONG).show()
+                    showProfilePage()
+                }.onFailure { e ->
+                    Toast.makeText(this, "Profile save nahi hua: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        val saveParams = LinearLayout.LayoutParams(-1, dp(50))
+        saveParams.topMargin = dp(18)
+        page.addView(save, saveParams)
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(black)
+            addView(page)
+        }
+        setContentView(scroll)
+
+        SupabaseClient.getUserProfile(profileAccessToken, profileUserId) { result ->
+            if (isFinishing || isDestroyed) return@getUserProfile
+            result.onSuccess { profile ->
+                profileAvatarPath = profile.avatarPath
+                profileCoverPath = profile.coverPath
+                bio.setText(profile.bio)
+                location.setText(profile.location)
+                followersValue.text = profile.followers.toString()
+                followingValue.text = profile.following.toString()
+                loadProfileImage(avatar, profileAvatarPath)
+                loadProfileImage(coverView, profileCoverPath)
+            }.onFailure { e ->
+                Toast.makeText(this, "Profile load nahi hua: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun openProfileImagePicker(requestCode: Int) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+        }
+        startActivityForResult(intent, requestCode)
+    }
+
+    private fun loadProfileImage(target: ImageView, path: String) {
+        if (path.isBlank()) return
+        imageExecutor.execute {
+            val bitmap = runCatching {
+                val connection = URL(SupabaseClient.getProfileImageUrl(path)).openConnection() as HttpURLConnection
+                try {
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.inputStream.use { BitmapFactory.decodeStream(it) }
+                } finally { connection.disconnect() }
+            }.getOrNull()
+            mainHandler.post {
+                if (!isFinishing && !isDestroyed && bitmap != null) target.setImageBitmap(bitmap)
+            }
+        }
+    }
+
+    private fun uploadSelectedProfileImage(uri: Uri, kind: String) {
+        Toast.makeText(this, "Image upload ho rahi hai...", Toast.LENGTH_SHORT).show()
+        SupabaseClient.uploadProfileImage(this, profileAccessToken, profileUserId, uri, kind) { result ->
+            if (isFinishing || isDestroyed) return@uploadProfileImage
+            result.onSuccess { path ->
+                if (kind == "avatar") profileAvatarPath = path else profileCoverPath = path
+                SupabaseClient.saveUserProfile(
+                    profileAccessToken, profileUserId,
+                    profileBioField?.text?.toString().orEmpty(),
+                    profileLocationField?.text?.toString().orEmpty(),
+                    profileAvatarPath, profileCoverPath
+                ) { saved ->
+                    if (isFinishing || isDestroyed) return@saveUserProfile
+                    saved.onSuccess {
+                        Toast.makeText(this, if (kind == "avatar") "DP update ho gayi." else "Cover image update ho gayi.", Toast.LENGTH_LONG).show()
+                        showProfilePage()
+                    }.onFailure { e ->
+                        Toast.makeText(this, "Image upload ho gayi lekin profile save nahi hua: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }.onFailure { e ->
+                Toast.makeText(this, "Image upload nahi hui: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -666,6 +888,8 @@ class MainActivity : Activity() {
                 selectedPosterUri = uri
                 Toast.makeText(this, "Poster select ho gaya.", Toast.LENGTH_SHORT).show()
             }
+            PICK_PROFILE_COVER -> uploadSelectedProfileImage(uri, "cover")
+            PICK_PROFILE_AVATAR -> uploadSelectedProfileImage(uri, "avatar")
             PICK_LOGO_FILE -> {
                 val session = adminSession
                 if (session == null) {

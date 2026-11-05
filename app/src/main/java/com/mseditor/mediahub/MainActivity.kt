@@ -78,6 +78,7 @@ class MainActivity : Activity() {
     private var profileUserId = ""
     private var profileBioField: EditText? = null
     private var profileLocationField: EditText? = null
+    private var returnToUploadPostAfterImageEdit = false
     private var selectedUploadUri: Uri? = null
     private var selectedPosterUri: Uri? = null
 
@@ -697,9 +698,11 @@ class MainActivity : Activity() {
         page.addView(profileCoverPreview, LinearLayout.LayoutParams(-1, dp(110)).apply { topMargin = dp(8) })
         loadProfileImage(profileCoverPreview, profileCoverPath)
         page.addView(actionButton("Cover Image") {
+            returnToUploadPostAfterImageEdit = true
             openProfileImagePicker(PICK_PROFILE_COVER)
         }, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8) })
         page.addView(actionButton("Edit Profile Photo") {
+            returnToUploadPostAfterImageEdit = true
             openProfileImagePicker(PICK_PROFILE_AVATAR)
         }, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8) })
 
@@ -799,6 +802,16 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(18) })
         page.addView(status, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
         setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
+        SupabaseClient.getUserProfile(token, userId) { result ->
+            if (isFinishing || isDestroyed) return@getUserProfile
+            result.onSuccess { profile ->
+                profileAvatarPath = profile.avatarPath
+                profileCoverPath = profile.coverPath
+                bioField.setText(profile.bio)
+                locationField.setText(profile.location)
+                loadProfileImage(profileCoverPreview, profileCoverPath)
+            }
+        }
     }
 
     private fun showProfilePage() {
@@ -1076,7 +1089,12 @@ class MainActivity : Activity() {
                     if (isFinishing || isDestroyed) return@saveUserProfile
                     saved.onSuccess {
                         Toast.makeText(this, if (kind == "avatar") "DP update ho gayi." else "Cover image update ho gayi.", Toast.LENGTH_LONG).show()
-                        showProfilePage()
+                        if (returnToUploadPostAfterImageEdit) {
+                            returnToUploadPostAfterImageEdit = false
+                            showUserUploadPostPage()
+                        } else {
+                            showProfilePage()
+                        }
                     }.onFailure { e ->
                         Toast.makeText(this, "Image upload ho gayi lekin profile save nahi hua: ${e.message}", Toast.LENGTH_LONG).show()
                     }

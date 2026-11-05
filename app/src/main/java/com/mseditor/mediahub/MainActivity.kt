@@ -6,6 +6,9 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -54,6 +57,7 @@ class MainActivity : Activity() {
 
     private val imageExecutor = Executors.newFixedThreadPool(3)
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var splashRunnable: Runnable? = null
 
     private var selectedCategory = "Home"
     private var adminSession: SupabaseClient.AdminSession? = null
@@ -73,7 +77,72 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        showHome()
+        showSplashScreen()
+    }
+
+    private fun showSplashScreen() {
+        window.statusBarColor = Color.BLACK
+        window.navigationBarColor = Color.BLACK
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+
+        val splash = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.BLACK)
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+        }
+        val logo = ImageView(this).apply {
+            setImageResource(R.mipmap.ic_launcher)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = true
+        }
+        splash.addView(logo, LinearLayout.LayoutParams(dp(270), dp(270)))
+        val radar = RadarScannerView(this)
+        val radarParams = LinearLayout.LayoutParams(dp(150), dp(150))
+        radarParams.topMargin = dp(24)
+        splash.addView(radar, radarParams)
+        val status = text("SCANNING APP...", 12f, emerald, true).apply {
+            gravity = Gravity.CENTER
+            letterSpacing = 0.18f
+            setPadding(0, dp(12), 0, 0)
+        }
+        splash.addView(status)
+        setContentView(splash)
+        splashRunnable?.let { mainHandler.removeCallbacks(it) }
+        splashRunnable = Runnable {
+            if (!isFinishing && !isDestroyed) {
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                showHome()
+            }
+        }
+        mainHandler.postDelayed(splashRunnable!!, 2200L)
+    }
+
+    private inner class RadarScannerView(context: Context) : View(context) {
+        private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1.5f); color = emerald; alpha = 150 }
+        private val sweepPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = emerald; alpha = 75 }
+        private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(2f); color = emerald; alpha = 230 }
+        private var angle = 0f
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val cx = width / 2f; val cy = height / 2f
+            val radius = (minOf(width, height) / 2f) - dp(5)
+            val bounds = RectF(cx - radius, cy - radius, cx + radius, cy + radius)
+            for (fraction in floatArrayOf(0.34f, 0.67f, 1f)) canvas.drawCircle(cx, cy, radius * fraction, ringPaint)
+            canvas.drawLine(cx - radius, cy, cx + radius, cy, ringPaint)
+            canvas.drawLine(cx, cy - radius, cx, cy + radius, ringPaint)
+            canvas.drawArc(bounds, angle, 48f, true, sweepPaint)
+            val radians = Math.toRadians(angle.toDouble())
+            canvas.drawLine(cx, cy, cx + (radius * kotlin.math.cos(radians)).toFloat(), cy + (radius * kotlin.math.sin(radians)).toFloat(), linePaint)
+            canvas.drawCircle(cx, cy, dp(3f), linePaint)
+            angle = (angle + 5f) % 360f
+            postInvalidateDelayed(32L)
+        }
     }
 
     private fun dp(value: Int): Int =

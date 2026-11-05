@@ -68,6 +68,9 @@ class MainActivity : Activity() {
     private val PICK_LOGO_FILE = 4103
     private val PICK_PROFILE_COVER = 4104
     private val PICK_PROFILE_AVATAR = 4105
+    private val PICK_USER_POST_FILE = 4106
+    private var selectedUserPostUri: Uri? = null
+    private var selectedUserPostType: String = ""
     private var profileAvatarPath = ""
     private var profileCoverPath = ""
     private var profileAccessToken = ""
@@ -662,6 +665,86 @@ class MainActivity : Activity() {
     }
 
 
+
+    private fun showUserUploadPostPage() {
+        val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
+        val token = prefs.getString("access_token", "").orEmpty()
+        val userId = prefs.getString("user_id", "").orEmpty()
+        if (token.isBlank() || userId.isBlank()) {
+            startActivity(Intent(this, AuthActivity::class.java))
+            finish()
+            return
+        }
+        selectedUserPostUri = null
+        selectedUserPostType = ""
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(24))
+            setBackgroundColor(black)
+        }
+        page.addView(actionButton("‹ Back to Profile") { showProfilePage() }, LinearLayout.LayoutParams(-1, dp(44)))
+        page.addView(text("UPLOAD POST", 24f, emerald, true).apply { setPadding(0, dp(20), 0, dp(5)) })
+        page.addView(text("Share an image or video on your profile", 13f, gold).apply { setPadding(0, 0, 0, dp(18)) })
+        val titleField = EditText(this).apply {
+            hint = "Post title"
+            setSingleLine(true)
+            setTextColor(white); setHintTextColor(Color.LTGRAY)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = rounded(panel, emerald)
+        }
+        val descriptionField = EditText(this).apply {
+            hint = "Description (optional)"
+            minLines = 3; gravity = Gravity.TOP
+            setTextColor(white); setHintTextColor(Color.LTGRAY)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = rounded(panel, emerald)
+        }
+        val selectedLabel = text("No image or video selected", 13f, Color.LTGRAY)
+        val status = text("Choose an image or video to upload.", 13f, gold)
+        page.addView(titleField, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
+        page.addView(descriptionField, LinearLayout.LayoutParams(-1, dp(100)).apply { topMargin = dp(10) })
+        page.addView(actionButton("Upload Image") {
+            selectedUserPostType = "image"
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "image/*"
+            }, PICK_USER_POST_FILE)
+        }, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(16) })
+        page.addView(actionButton("Upload Video") {
+            selectedUserPostType = "video"
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "video/*"
+            }, PICK_USER_POST_FILE)
+        }, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
+        page.addView(selectedLabel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+        page.addView(actionButton("PUBLISH POST") {
+            val uri = selectedUserPostUri
+            if (uri == null) {
+                status.text = "Pehle image ya video select karein."
+                return@actionButton
+            }
+            val title = titleField.text.toString().trim()
+            if (title.isBlank()) {
+                titleField.error = "Post title zaroori hai"
+                return@actionButton
+            }
+            status.text = "Post upload ho rahi hai..."
+            SupabaseClient.uploadUserPost(this, token, userId, uri, selectedUserPostType,
+                title, descriptionField.text.toString().trim()) { result ->
+                if (isFinishing || isDestroyed) return@uploadUserPost
+                result.onSuccess {
+                    Toast.makeText(this, "Post publish ho gayi.", Toast.LENGTH_LONG).show()
+                    selectedUserPostUri = null
+                    showProfilePage()
+                }.onFailure { error ->
+                    status.text = "Upload failed: ${error.message}"
+                    Toast.makeText(this, "Post upload nahi hui: ${error.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(18) })
+        page.addView(status, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+        setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
+    }
+
     private fun showProfilePage() {
         val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
         profileAccessToken = prefs.getString("access_token", "").orEmpty()
@@ -769,6 +852,8 @@ class MainActivity : Activity() {
         stats.addView(followersStat, LinearLayout.LayoutParams(0, -2, 1f))
         stats.addView(followingStat, LinearLayout.LayoutParams(0, -2, 1f))
         page.addView(stats)
+        page.addView(actionButton("＋  Upload Post") { showUserUploadPostPage() },
+            LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(12) })
 
         page.addView(text("Bio", 13f, gold, true).apply { setPadding(dp(4), dp(14), 0, dp(4)) })
         val bio = EditText(this).apply {
@@ -804,6 +889,7 @@ class MainActivity : Activity() {
                 if (isFinishing || isDestroyed) return@saveUserProfile
                 result.onSuccess {
                     Toast.makeText(this, "Profile save ho gaya.", Toast.LENGTH_LONG).show()
+                    showProfilePage()
                 }.onFailure { e ->
                     Toast.makeText(this, "Profile save nahi hua: ${e.message}", Toast.LENGTH_LONG).show()
                 }
@@ -923,7 +1009,7 @@ class MainActivity : Activity() {
             result.onSuccess { profile ->
                 profileAvatarPath = profile.avatarPath
                 profileCoverPath = profile.coverPath
-                displayName.text = profile.displayName.ifBlank { profile.username.ifBlank { "Your Name" } }
+                displayName.text = profile.displayName.ifBlank { " " }
                 username.text = if (profile.username.isBlank()) "@username" else "@${profile.username.removePrefix("@")}"
                 bio.setText(profile.bio)
                 location.setText(profile.location)
@@ -1005,6 +1091,10 @@ class MainActivity : Activity() {
             }
             PICK_PROFILE_COVER -> uploadSelectedProfileImage(uri, "cover")
             PICK_PROFILE_AVATAR -> uploadSelectedProfileImage(uri, "avatar")
+            PICK_USER_POST_FILE -> {
+                selectedUserPostUri = uri
+                Toast.makeText(this, if (selectedUserPostType == "image") "Image select ho gayi." else "Video select ho gayi.", Toast.LENGTH_SHORT).show()
+            }
             PICK_LOGO_FILE -> {
                 val session = adminSession
                 if (session == null) {

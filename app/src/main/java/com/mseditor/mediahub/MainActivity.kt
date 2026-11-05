@@ -1011,10 +1011,14 @@ class MainActivity : Activity() {
             result.onSuccess { profile ->
                 profileAvatarPath = profile.avatarPath
                 profileCoverPath = profile.coverPath
-                val cleanUsername = profile.username.removePrefix("@")
-                val cleanDisplayName = profile.displayName.trim()
+                val cleanUsername = profile.username.trim().removePrefix("@").trim()
+                val cleanDisplayName = profile.displayName.trim().removePrefix("@").trim()
+                // Never show the username twice if it was also saved as the display name.
                 displayName.text = cleanDisplayName
-                displayName.visibility = if (cleanDisplayName.isBlank() || cleanDisplayName.equals(cleanUsername, ignoreCase = true)) View.GONE else View.VISIBLE
+                displayName.visibility = if (
+                    cleanDisplayName.isBlank() ||
+                    cleanDisplayName.equals(cleanUsername, ignoreCase = true)
+                ) View.GONE else View.VISIBLE
                 username.text = if (cleanUsername.isBlank()) "@username" else "@$cleanUsername"
                 bio.setText(profile.bio)
                 location.setText(profile.location)

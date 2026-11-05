@@ -124,9 +124,9 @@ class MainActivity : Activity() {
     }
 
     private inner class RadarScannerView(context: Context) : View(context) {
-        private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(2); color = emerald; alpha = 150 }
+        private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(2).toFloat(); color = emerald; alpha = 150 }
         private val sweepPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = emerald; alpha = 75 }
-        private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(2f); color = emerald; alpha = 230 }
+        private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(2).toFloat(); color = emerald; alpha = 230 }
         private var angle = 0f
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
@@ -139,7 +139,7 @@ class MainActivity : Activity() {
             canvas.drawArc(bounds, angle, 48f, true, sweepPaint)
             val radians = Math.toRadians(angle.toDouble())
             canvas.drawLine(cx, cy, cx + (radius * kotlin.math.cos(radians)).toFloat(), cy + (radius * kotlin.math.sin(radians)).toFloat(), linePaint)
-            canvas.drawCircle(cx, cy, dp(3), linePaint)
+            canvas.drawCircle(cx, cy, dp(3).toFloat(), linePaint)
             angle = (angle + 5f) % 360f
             postInvalidateDelayed(32L)
         }

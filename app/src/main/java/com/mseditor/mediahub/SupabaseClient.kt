@@ -20,7 +20,10 @@ data class MediaItem(
     val externalUrl: String,
     val posterPath: String,
     val createdBy: String,
-    val createdAt: String
+    val createdAt: String,
+    val profileUsername: String = "",
+    val profileDisplayName: String = "",
+    val profileAvatarPath: String = ""
 )
 
 object SupabaseClient {
@@ -90,7 +93,25 @@ object SupabaseClient {
                         )
                     }
 
-                    parseMediaItems(response)
+                    val parsed = parseMediaItems(response)
+                    val ownerIds = parsed.map { it.createdBy }.filter { it.isNotBlank() }.distinct()
+                    if (ownerIds.isEmpty()) parsed else {
+                        val ids = ownerIds.joinToString(",")
+                        val profileRows = JSONArray(restRequest("GET", "profiles?select=id,username,display_name,avatar_path&id=in.($ids)"))
+                        val profileMap = mutableMapOf<String, JSONObject>()
+                        for (index in 0 until profileRows.length()) {
+                            val row = profileRows.getJSONObject(index)
+                            profileMap[cleanJsonString(row, "id")] = row
+                        }
+                        parsed.map { item ->
+                            val profile = profileMap[item.createdBy]
+                            if (profile == null) item else item.copy(
+                                profileUsername = cleanJsonString(profile, "username"),
+                                profileDisplayName = cleanJsonString(profile, "display_name"),
+                                profileAvatarPath = cleanJsonString(profile, "avatar_path")
+                            )
+                        }
+                    }
 
                 } finally {
                     connection.disconnect()
@@ -461,6 +482,65 @@ object SupabaseClient {
     }
 
 
+
+    fun isFollowing(token: String, followerId: String, followingId: String, callback: (Boolean) -> Unit) {
+        executor.execute {
+            val following = runCatching {
+                val follower = URLEncoder.encode(followerId, "UTF-8")
+                val target = URLEncoder.encode(followingId, "UTF-8")
+                JSONArray(profileRequest(token, "GET", "user_follows?select=following_id&follower_id=eq.$follower&following_id=eq.$target")).length() > 0
+            }.getOrDefault(false)
+            mainHandler.post { callback(following) }
+        }
+    }
+
+    fun toggleFollow(token: String, followerId: String, followingId: String, currentlyFollowing: Boolean, callback: (Result<Boolean>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && followerId.isNotBlank() && followingId.isNotBlank())
+                require(followerId != followingId) { "Apne aap ko follow nahi kar sakte." }
+                val follower = URLEncoder.encode(followerId, "UTF-8")
+                val target = URLEncoder.encode(followingId, "UTF-8")
+                if (currentlyFollowing) {
+                    profileRequest(token, "DELETE", "user_follows?follower_id=eq.$follower&following_id=eq.$target")
+                    false
+                } else {
+                    val body = JSONObject().put("follower_id", followerId).put("following_id", followingId).toString()
+                    profileRequest(token, "POST", "user_follows", body)
+                    true
+                }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun updateUserPost(token: String, userId: String, itemId: String, title: String, description: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank() && itemId.isNotBlank())
+                val id = URLEncoder.encode(itemId, "UTF-8")
+                val body = JSONObject().put("title", title.take(160)).put("description", description.take(2000)).toString()
+                profileRequest(token, "PATCH", "media_items?id=eq.$id&created_by=eq.$userId", body)
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun deleteUserPost(token: String, userId: String, item: MediaItem, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank() && item.createdBy == userId)
+                require(item.storagePath.startsWith("user-posts/$userId/")) { "Sirf apni user post delete kar sakte hain." }
+                val storageBody = JSONObject().put("prefixes", JSONArray().put(item.storagePath)).toString()
+                profileRequest(token, "DELETE", "object/media", storageBody, storage = true)
+                val id = URLEncoder.encode(item.id, "UTF-8")
+                profileRequest(token, "DELETE", "media_items?id=eq.$id&created_by=eq.$userId")
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
 
     fun uploadUserPost(
         context: android.content.Context,

@@ -58,6 +58,8 @@ class MainActivity : Activity() {
     private val imageExecutor = Executors.newFixedThreadPool(3)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var splashRunnable: Runnable? = null
+    private var hiddenAdminTapCount = 0
+    private var hiddenAdminTapReset: Runnable? = null
 
     private var selectedCategory = "Home"
     private var adminSession: SupabaseClient.AdminSession? = null
@@ -224,6 +226,19 @@ class MainActivity : Activity() {
         brandRow.addView(brandTitle, LinearLayout.LayoutParams(0, -2, 1f))
         brand.addView(brandRow)
         brand.addView(text("Video Songs • Tutorials • Prompts", 12f, gold))
+        // Hidden admin access: tap the brand header 7 times within 2.5 seconds.
+        brandRow.setOnClickListener {
+            hiddenAdminTapCount++
+            hiddenAdminTapReset?.let { mainHandler.removeCallbacks(it) }
+            if (hiddenAdminTapCount >= 7) {
+                hiddenAdminTapCount = 0
+                hiddenAdminTapReset = null
+                showAdminLogin()
+            } else {
+                hiddenAdminTapReset = Runnable { hiddenAdminTapCount = 0 }
+                mainHandler.postDelayed(hiddenAdminTapReset!!, 2500L)
+            }
+        }
         header.addView(brand)
         loadHeaderLogo(brandLogo)
 
@@ -420,21 +435,19 @@ class MainActivity : Activity() {
                 if (category == "Home") showHome() else showCategory(category)
             }
         }
-        section("ACCOUNT")
-        if (adminSession == null) {
-            item("Account / Admin Login") { showAdminLogin() }
-        } else {
+        if (adminSession != null) {
+            section("ADMIN")
             item("Open Admin Page") { showAdminPage() }
             item("Admin Sign Out") {
                 adminSession = null
                 Toast.makeText(this, "Admin sign out ho gaya.", Toast.LENGTH_SHORT).show()
                 showNavigationMenu()
             }
+            section("ADMIN TOOLS")
+            item("Change App Logo") { chooseAppLogo() }
+            item("Cover Image & Logo") { openAdminWebsite("Admin appearance settings") }
+            item("Upload Media") { showUploadForm() }
         }
-        section("ADMIN & APPEARANCE")
-        item("Change App Logo") { chooseAppLogo() }
-        item("Cover Image & Logo") { openAdminWebsite("Admin appearance settings") }
-        item("Upload Media") { showUploadForm() }
         section("APP")
         item("Back to Home") { showHome() }
         item("Exit App") { finish() }
@@ -447,17 +460,24 @@ class MainActivity : Activity() {
     }
 
     private fun showAdminLogin() {
-        val form = LinearLayout(this).apply {
+        val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(12), dp(18), dp(8))
-            setBackgroundColor(panel)
+            setPadding(dp(22), dp(28), dp(22), dp(24))
+            setBackgroundColor(black)
         }
+        page.addView(text("MS EDITOR MEDIA HUB", 16f, gold, true))
+        page.addView(text("ADMIN LOGIN", 25f, emerald, true).apply {
+            setPadding(0, dp(22), 0, dp(8))
+        })
+        page.addView(text("Yeh private admin page hai. Sirf approved admin account ko access milega.", 14f, Color.LTGRAY))
         val email = EditText(this).apply {
             hint = "Admin email"
             setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
             setTextColor(white)
             setHintTextColor(Color.LTGRAY)
+            setPadding(dp(14), dp(13), dp(14), dp(13))
+            background = rounded(panel, emerald)
         }
         val password = EditText(this).apply {
             hint = "Password"
@@ -465,41 +485,45 @@ class MainActivity : Activity() {
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
             setTextColor(white)
             setHintTextColor(Color.LTGRAY)
+            setPadding(dp(14), dp(13), dp(14), dp(13))
+            background = rounded(panel, emerald)
         }
-        form.addView(text("Sign in with your registered admin account.", 13f, gold))
-        form.addView(email)
-        form.addView(password)
-        val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle("MS Media Hub · Admin Login")
-            .setView(form)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Login", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val enteredEmail = email.text.toString().trim()
-                val enteredPassword = password.text.toString()
-                if (enteredEmail.isBlank()) { email.error = "Email enter karein"; return@setOnClickListener }
-                if (enteredPassword.isBlank()) { password.error = "Password enter karein"; return@setOnClickListener }
-                val loginButton = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
-                loginButton.isEnabled = false
-                loginButton.text = "Checking..."
-                SupabaseClient.signInAndCheckAdmin(enteredEmail, enteredPassword) { result ->
-                    if (isFinishing || isDestroyed) return@signInAndCheckAdmin
-                    loginButton.isEnabled = true
-                    loginButton.text = "Login"
-                    result.onSuccess { session ->
-                        adminSession = session
-                        dialog.dismiss()
-                        Toast.makeText(this, "Admin verification successful.", Toast.LENGTH_SHORT).show()
-                        showAdminPage()
-                    }.onFailure { error ->
-                        Toast.makeText(this, error.message ?: "Admin login failed.", Toast.LENGTH_LONG).show()
-                    }
+        page.addView(email, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(24) })
+        page.addView(password, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+        val login = actionButton("ADMIN LOGIN") { }
+        page.addView(login, LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(20) })
+        page.addView(actionButton("Back to Home") { showHome() },
+            LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
+        setContentView(ScrollView(this).apply {
+            isFillViewport = true
+            addView(page)
+        })
+        login.setOnClickListener {
+            val enteredEmail = email.text.toString().trim()
+            val enteredPassword = password.text.toString()
+            if (enteredEmail.isBlank()) {
+                email.error = "Admin email enter karein"
+                return@setOnClickListener
+            }
+            if (enteredPassword.isBlank()) {
+                password.error = "Password enter karein"
+                return@setOnClickListener
+            }
+            login.isEnabled = false
+            login.text = "Checking..."
+            SupabaseClient.signInAndCheckAdmin(enteredEmail, enteredPassword) { result ->
+                if (isFinishing || isDestroyed) return@signInAndCheckAdmin
+                login.isEnabled = true
+                login.text = "ADMIN LOGIN"
+                result.onSuccess { session ->
+                    adminSession = session
+                    Toast.makeText(this, "Admin verification successful.", Toast.LENGTH_SHORT).show()
+                    showAdminPage()
+                }.onFailure { error ->
+                    Toast.makeText(this, error.message ?: "Admin login failed.", Toast.LENGTH_LONG).show()
                 }
             }
         }
-        dialog.show()
     }
 
     private fun showAdminPage() {

@@ -34,63 +34,86 @@ class AuthActivity : Activity() {
 
     override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);window.statusBarColor=Color.BLACK;window.navigationBarColor=Color.BLACK;showPage()}
     private fun showPage(){
-        page=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(22),dp(24),dp(22),dp(28));setBackgroundColor(black)}
-        setContentView(ScrollView(this).apply{isFillViewport=true;addView(page)})
-        val head=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
-        head.addView(ImageView(this).apply{setImageResource(R.mipmap.ic_launcher);scaleType=ImageView.ScaleType.FIT_CENTER},LinearLayout.LayoutParams(dp(42),dp(42)))
-        head.addView(txt("MS EDITOR MEDIA HUB",18f,Color.WHITE,true).apply{setPadding(dp(9),0,0,0)})
-        add(head,2);add(txt("WELCOME TO YOUR MEDIA HUB",12f,gold,true),18)
-        add(txt("Sign up ya login karein. Account ke baghair app open nahi hogi.",14f,Color.LTGRAY),6)
-        val tabs=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
-        tabs.addView(btn("SIGN UP",signup){signup=true;showPage()},LinearLayout.LayoutParams(0,dp(48),1f))
-        tabs.addView(btn("LOGIN",!signup){signup=false;showPage()},LinearLayout.LayoutParams(0,dp(48),1f))
-        add(tabs,22)
-        add(txt(if(signup)"CREATE YOUR ACCOUNT" else "LOGIN TO YOUR ACCOUNT",20f,green,true),18)
-        val methods=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
-        listOf("google" to "Google","phone" to "Phone","email" to "Email").forEach{(key,title)->
-            methods.addView(btn(title,method==key){method=key;showPage()},LinearLayout.LayoutParams(0,dp(46),1f).apply{marginEnd=dp(5)})
+        page=LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL
+            gravity=Gravity.CENTER_HORIZONTAL
+            setPadding(dp(22),dp(28),dp(22),dp(28))
+            setBackgroundColor(black)
         }
-        add(methods,14)
-        if(signup) signupFields() else loginFields()
-    }
+        setContentView(ScrollView(this).apply{
+            isFillViewport=true
+            addView(page, ScrollView.LayoutParams(-1,-1))
+        })
 
-    private fun signupFields(){
-        val first=field("First name");val last=field("Second name");val username=field("@username")
-        add(first,14);add(last);add(username)
-        if(method=="google"){
-            add(txt("Google account se continue karein. Google provider Supabase mein enabled hona zaroori hai.",13f,Color.LTGRAY),12)
-            add(btn("Continue with Google",true){openGoogle()},16);return
+        val head=LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL
+            gravity=Gravity.CENTER
         }
-        val identity=if(method=="phone")field("+92 Phone number",android.text.InputType.TYPE_CLASS_PHONE) else field("Email address",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
-        val pass=field("Create password",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
-        val confirm=field("Confirm password",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
-        add(identity,14);add(pass);add(confirm)
-        add(btn("CREATE ACCOUNT  →",true){
-            val f=first.text.toString().trim();val l=last.text.toString().trim();val u=username.text.toString().trim().removePrefix("@")
-            val id=identity.text.toString().trim();val p=pass.text.toString()
-            if(f.isBlank()||l.isBlank()||!u.matches(Regex("[A-Za-z0-9_]{3,24}"))){toast("First name, second name aur valid @username bharein.");return@btn}
-            if(id.isBlank()||p.length<6||p!=confirm.text.toString()){toast("Phone/email aur matching password (6+ characters) zaroori hai.");return@btn}
-            val body=JSONObject().put("password",p).put("data",JSONObject().put("first_name",f).put("last_name",l).put("username",u).put("full_name","$f $l"))
-            if(method=="phone")body.put("phone",id) else body.put("email",id)
+        head.addView(ImageView(this).apply{
+            setImageResource(R.mipmap.ic_launcher)
+            scaleType=ImageView.ScaleType.FIT_CENTER
+        },LinearLayout.LayoutParams(dp(76),dp(76)))
+        head.addView(txt("MS EDITOR MEDIA HUB",20f,Color.WHITE,true).apply{
+            gravity=Gravity.CENTER
+            setPadding(0,dp(10),0,0)
+        })
+        add(head,dp(18))
+        add(txt("SIGN UP",21f,gold,true),dp(24))
+
+        val signupCard=LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL
+            setPadding(dp(16),dp(16),dp(16),dp(18))
+            background=bg(Color.rgb(8,24,22),gold)
+        }
+        page.addView(signupCard,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(10)})
+        val oldPage=page
+        page=signupCard
+        val signupEmail=field("Email",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
+        val signupUsername=field("Username")
+        val signupPassword=field("Password",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        add(signupEmail,2);add(signupUsername,12);add(signupPassword,12)
+        add(btn("SIGN UP",true){
+            val email=signupEmail.text.toString().trim()
+            val username=signupUsername.text.toString().trim().removePrefix("@")
+            val password=signupPassword.text.toString()
+            if(email.isBlank()||!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()){
+                toast("Valid email address enter karein.");return@btn
+            }
+            if(!username.matches(Regex("[A-Za-z0-9_]{3,24}"))){
+                toast("Username 3 se 24 letters, numbers ya underscore ka hona chahiye.");return@btn
+            }
+            if(password.length<6){toast("Password kam az kam 6 characters ka hona chahiye.");return@btn}
+            val body=JSONObject().put("email",email).put("password",password)
+                .put("data",JSONObject().put("username",username))
             authRequest("POST","/auth/v1/signup",body){json->
                 val token=json.optString("access_token")
-                if(token.isNotBlank())saveSession(json) else toast("Account request bhej di. Email/SMS confirmation agar enabled hai to code verify karna hoga; phir Login karein.")
+                if(token.isNotBlank())saveSession(json)
+                else toast("Signup request bhej di. Email confirmation enabled ho to email verify karke Login karein.")
             }
-        },18)
-    }
+        },16)
+        page=oldPage
 
-    private fun loginFields(){
-        if(method=="google"){add(btn("Login with Google",true){openGoogle()},18);return}
-        val identity=if(method=="phone")field("+92 Phone number",android.text.InputType.TYPE_CLASS_PHONE) else field("Email address",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
-        val password=field("Password",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
-        add(identity,18);add(password)
-        add(btn("LOGIN  →",true){
-            val id=identity.text.toString().trim();val p=password.text.toString()
-            if(id.isBlank()||p.isBlank()){toast("Phone/email aur password enter karein.");return@btn}
-            val body=JSONObject().put("password",p)
-            if(method=="phone")body.put("phone",id) else body.put("email",id)
+        add(txt("LOGIN",21f,gold,true),24)
+        val loginCard=LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL
+            setPadding(dp(16),dp(16),dp(16),dp(18))
+            background=bg(Color.rgb(8,24,22),green)
+        }
+        page.addView(loginCard,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(10)})
+        page=loginCard
+        val loginEmail=field("Email",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
+        val loginPassword=field("Password",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        add(loginEmail,2);add(loginPassword,12)
+        add(btn("LOGIN",true){
+            val email=loginEmail.text.toString().trim()
+            val password=loginPassword.text.toString()
+            if(email.isBlank()||password.isBlank()){
+                toast("Email aur password enter karein.");return@btn
+            }
+            val body=JSONObject().put("email",email).put("password",password)
             authRequest("POST","/auth/v1/token?grant_type=password",body){saveSession(it)}
-        },18)
+        },16)
+        page=oldPage
     }
 
     private fun authRequest(http:String,path:String,body:JSONObject,done:(JSONObject)->Unit){

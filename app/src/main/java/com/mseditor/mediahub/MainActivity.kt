@@ -63,6 +63,7 @@ class MainActivity : Activity() {
     private var adminSession: SupabaseClient.AdminSession? = null
     private val PICK_MEDIA_FILE = 4101
     private val PICK_POSTER_FILE = 4102
+    private val PICK_LOGO_FILE = 4103
     private var selectedUploadUri: Uri? = null
     private var selectedPosterUri: Uri? = null
 
@@ -202,9 +203,18 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
 
-        brand.addView(text("MS EDITOR MEDIA HUB", 19f, emerald, true))
+        val brandTitle = text("MS EDITOR MEDIA HUB", 19f, emerald, true)
+        val brandLogo = ImageView(this).apply {
+            visibility = View.GONE
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = true
+            contentDescription = "MS Editor Media Hub logo"
+        }
+        brand.addView(brandLogo, LinearLayout.LayoutParams(dp(180), dp(48)))
+        brand.addView(brandTitle)
         brand.addView(text("Video Songs • Tutorials • Prompts", 12f, gold))
         header.addView(brand)
+        loadHeaderLogo(brandLogo, brandTitle)
 
         val settings = text("⚙", 27f, gold, true).apply {
             gravity = Gravity.CENTER
@@ -329,6 +339,51 @@ class MainActivity : Activity() {
         loadMediaItems()
     }
 
+    private fun loadHeaderLogo(target: ImageView, fallback: View) {
+        SupabaseClient.getAppLogo { result ->
+            if (isFinishing || isDestroyed) return@getAppLogo
+            val logoUrl = result.getOrNull().orEmpty()
+            if (logoUrl.isBlank()) {
+                target.visibility = View.GONE
+                fallback.visibility = View.VISIBLE
+                return@getAppLogo
+            }
+            imageExecutor.execute {
+                val bitmap = runCatching {
+                    val connection = URL(logoUrl).openConnection() as HttpURLConnection
+                    try {
+                        connection.connectTimeout = 15000
+                        connection.readTimeout = 20000
+                        connection.instanceFollowRedirects = true
+                        connection.inputStream.use { BitmapFactory.decodeStream(it) }
+                    } finally {
+                        connection.disconnect()
+                    }
+                }.getOrNull()
+                mainHandler.post {
+                    if (!isFinishing && !isDestroyed && bitmap != null) {
+                        target.setImageBitmap(bitmap)
+                        target.visibility = View.VISIBLE
+                        fallback.visibility = View.GONE
+                    }
+                }
+            }
+        }
+    }
+
+    private fun chooseAppLogo() {
+        if (adminSession == null) {
+            Toast.makeText(this, "Logo badalne ke liye Admin Login karein.", Toast.LENGTH_LONG).show()
+            showAdminLogin()
+            return
+        }
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+        }
+        startActivityForResult(intent, PICK_LOGO_FILE)
+    }
+
     private fun showNavigationMenu() {
         val menu = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -368,6 +423,7 @@ class MainActivity : Activity() {
             }
         }
         section("ADMIN & APPEARANCE")
+        item("Change App Logo") { chooseAppLogo() }
         item("Cover Image & Logo") { openAdminWebsite("Admin appearance settings") }
         item("Upload Media") { showUploadForm() }
         section("APP")
@@ -448,6 +504,8 @@ class MainActivity : Activity() {
         page.addView(text("Verified admin account", 14f, gold).apply { setPadding(0, dp(8), 0, dp(18)) })
         page.addView(text("Your account passed Supabase email/password sign-in and the is_media_admin permission check.", 14f, white))
         page.addView(actionButton("＋ Upload Media (In App)") { showUploadForm() }, LinearLayout.LayoutParams(-1, dp(50)))
+        val logoParams = LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(10) }
+        page.addView(actionButton("▧ Change App Logo") { chooseAppLogo() }, logoParams)
         val webTools = actionButton("Open Full Admin Tools (Website)") { openAdminWebsite("Admin tools") }
         val webParams = LinearLayout.LayoutParams(-1, dp(50))
         webParams.topMargin = dp(10)
@@ -570,6 +628,24 @@ class MainActivity : Activity() {
             PICK_POSTER_FILE -> {
                 selectedPosterUri = uri
                 Toast.makeText(this, "Poster select ho gaya.", Toast.LENGTH_SHORT).show()
+            }
+            PICK_LOGO_FILE -> {
+                val session = adminSession
+                if (session == null) {
+                    Toast.makeText(this, "Admin session nahi mili. Dobara login karein.", Toast.LENGTH_LONG).show()
+                    showAdminLogin()
+                } else {
+                    Toast.makeText(this, "Logo upload ho raha hai...", Toast.LENGTH_SHORT).show()
+                    SupabaseClient.updateAppLogo(this, session, uri) { result ->
+                        if (isFinishing || isDestroyed) return@updateAppLogo
+                        result.onSuccess {
+                            Toast.makeText(this, "App logo save ho gaya. Home par naya logo dikh jayega.", Toast.LENGTH_LONG).show()
+                            showHome()
+                        }.onFailure { error ->
+                            Toast.makeText(this, "Logo save nahi hua: ${error.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
             }
         }
     }

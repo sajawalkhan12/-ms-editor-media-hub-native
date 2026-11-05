@@ -460,6 +460,133 @@ object SupabaseClient {
         }
     }
 
+
+    private const val APPEARANCE_SETTINGS_PATH = "appearance/site-settings.json"
+
+    private fun publicAppearanceUrl(path: String): String {
+        val encoded = path.split("/").joinToString("/") {
+            URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+        }
+        return SupabaseConfig.SUPABASE_URL.trimEnd('/') +
+            "/storage/v1/object/public/media/" + encoded
+    }
+
+    fun getAppLogo(callback: (Result<String>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val url = URL(publicAppearanceUrl(APPEARANCE_SETTINGS_PATH) + "?v=" + System.currentTimeMillis())
+                val connection = url.openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "GET"
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.useCaches = false
+                    connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    val code = connection.responseCode
+                    if (code == 404) return@runCatching ""
+                    if (code !in 200..299) throw Exception("Appearance settings HTTP $code")
+                    val raw = connection.inputStream.bufferedReader().use { it.readText() }
+                    JSONObject(raw).optString("logo", "")
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun updateAppLogo(
+        context: android.content.Context,
+        session: AdminSession,
+        imageUri: android.net.Uri,
+        callback: (Result<String>) -> Unit
+    ) {
+        executor.execute {
+            val result = runCatching {
+                require(session.accessToken.isNotBlank()) { "Admin session expire ho gayi. Dobara login karein." }
+                val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                val key = SupabaseConfig.SUPABASE_KEY.trim()
+                val settingsUrl = URL(publicAppearanceUrl(APPEARANCE_SETTINGS_PATH) + "?v=" + System.currentTimeMillis())
+                val settingsConnection = settingsUrl.openConnection() as HttpURLConnection
+                val settings = try {
+                    settingsConnection.requestMethod = "GET"
+                    settingsConnection.connectTimeout = 15000
+                    settingsConnection.readTimeout = 20000
+                    settingsConnection.setRequestProperty("apikey", key)
+                    val code = settingsConnection.responseCode
+                    when {
+                        code in 200..299 -> JSONObject(settingsConnection.inputStream.bufferedReader().use { it.readText() })
+                        code == 404 -> JSONObject()
+                        else -> throw Exception("Existing appearance settings HTTP $code")
+                    }
+                } finally {
+                    settingsConnection.disconnect()
+                }
+
+                val resolver = context.contentResolver
+                val mime = resolver.getType(imageUri) ?: "image/png"
+                require(mime.startsWith("image/")) { "Sirf image file select karein." }
+                val displayName = try {
+                    resolver.query(imageUri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                        if (it.moveToFirst()) it.getString(0) else null
+                    }
+                } catch (_: Exception) { null } ?: "app-logo.png"
+                val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                val logoPath = "appearance/${session.userId}-${System.currentTimeMillis()}-app-logo-$safeName"
+                val encodedLogoPath = logoPath.split("/").joinToString("/") {
+                    URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                }
+                val uploadImage = URL("$base/storage/v1/object/media/$encodedLogoPath").openConnection() as HttpURLConnection
+                try {
+                    uploadImage.requestMethod = "POST"
+                    uploadImage.connectTimeout = 25000
+                    uploadImage.readTimeout = 90000
+                    uploadImage.doOutput = true
+                    uploadImage.setRequestProperty("apikey", key)
+                    uploadImage.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                    uploadImage.setRequestProperty("Content-Type", mime)
+                    uploadImage.setRequestProperty("x-upsert", "false")
+                    resolver.openInputStream(imageUri)?.use { input ->
+                        uploadImage.outputStream.use { output -> input.copyTo(output, 64 * 1024) }
+                    } ?: throw Exception("Logo image read nahi ho saki.")
+                    val code = uploadImage.responseCode
+                    val response = (if (code in 200..299) uploadImage.inputStream else uploadImage.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Logo upload HTTP $code: $response")
+                } finally {
+                    uploadImage.disconnect()
+                }
+
+                val logoUrl = publicAppearanceUrl(logoPath)
+                settings.put("logo", logoUrl)
+                if (!settings.has("name")) settings.put("name", "MS Editor Media Hub")
+                val settingsPath = APPEARANCE_SETTINGS_PATH.split("/").joinToString("/") {
+                    URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                }
+                val saveSettings = URL("$base/storage/v1/object/media/$settingsPath").openConnection() as HttpURLConnection
+                try {
+                    saveSettings.requestMethod = "POST"
+                    saveSettings.connectTimeout = 25000
+                    saveSettings.readTimeout = 30000
+                    saveSettings.doOutput = true
+                    saveSettings.setRequestProperty("apikey", key)
+                    saveSettings.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                    saveSettings.setRequestProperty("Content-Type", "application/json")
+                    saveSettings.setRequestProperty("x-upsert", "true")
+                    saveSettings.outputStream.use { it.write(settings.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = saveSettings.responseCode
+                    val response = (if (code in 200..299) saveSettings.inputStream else saveSettings.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Logo setting save HTTP $code: $response")
+                } finally {
+                    saveSettings.disconnect()
+                }
+                logoUrl
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
     fun getPublicMediaUrl(path: String): String {
 
         val cleanPath = path.trim()

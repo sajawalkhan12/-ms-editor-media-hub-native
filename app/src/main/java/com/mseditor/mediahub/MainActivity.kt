@@ -580,7 +580,7 @@ class MainActivity : Activity() {
         val descriptionField = edit("Description (optional)", true)
         val category = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
-                listOf("Movie", "Trailer", "Image", "Audio"))
+                listOf("Video Songs", "Video Tutorial", "Video Prompt", "Image Prompt", "Presets & Assets"))
         }
         val mediaLabel = text("No media file selected", 13f, Color.LTGRAY)
         val posterLabel = text("Poster: optional", 13f, Color.LTGRAY)
@@ -615,7 +615,11 @@ class MainActivity : Activity() {
             val titleValue = titleField.text.toString().trim()
             if (titleValue.isBlank()) { titleField.error = "Title zaroori hai"; return@actionButton }
             val mediaType = when (category.selectedItemPosition) {
-                0 -> "movie"; 1 -> "trailer"; 2 -> "image"; else -> "audio"
+                0 -> "video_songs"
+                1 -> "video_tutorial"
+                2 -> "video_prompt"
+                3 -> "image_prompt"
+                else -> "presets_assets"
             }
             uploadButton.isEnabled = false
             uploadButton.text = "Uploading..."

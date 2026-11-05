@@ -96,7 +96,7 @@ class MainActivity : Activity() {
             setPadding(dp(24), dp(24), dp(24), dp(24))
         }
         val logo = ImageView(this).apply {
-            setImageResource(R.mipmap.ic_launcher)
+            setImageResource(R.drawable.ic_launcher_splash)
             scaleType = ImageView.ScaleType.FIT_CENTER
             adjustViewBounds = true
         }

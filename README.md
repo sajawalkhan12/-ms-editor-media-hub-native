@@ -1,28 +1,30 @@
-# MS Editor — Native Android starter
+# MS Editor Media Hub — Native Android app
 
-This is a native Kotlin Android app (not a WebView wrapper) using the existing Supabase project configuration found in the website source.
+## Build configuration
+- Android application ID: `com.mseditor.mediahub`
+- Android Gradle Plugin: 8.6.1
+- Kotlin: 2.0.20
+- JDK: 17
+- Compile SDK: 35; minimum SDK: 24
+- GitHub Actions builds the debug APK using Gradle 8.9.
 
-## Verified existing categories
-- Home (all media)
-- Video Songs (`song`)
-- Video Tutorial (`tutorial`)
-- Video Prompt (`video_prompt`)
-- Image Prompt (`image_prompt`)
-- Presets & Assets (`assets`)
+## Existing backend
+- Uses the existing Supabase project URL and publishable client key.
+- Reads existing `media_items`, `media_likes`, and `media_comments` data.
+- Uses the existing public `media` storage bucket.
+- Do not add a service-role/secret key to this Android client.
+- Do not recreate, reset, or overwrite existing Supabase tables or stored media.
 
-`Tutorials` is an existing shortcut to the `tutorial` category, not a separate database category.
+## App features
+- Native Kotlin Android UI (not a WebView-only app).
+- Home feed and category pages for Video Songs, Video Tutorial, Video Prompt, Image Prompt, and Presets & Assets.
+- Media playback, prompt viewing/copying, likes, comments, sharing, and download controls.
+- Admin login and admin-only upload/delete actions.
 
-## Safety and current scope
-- Uses the existing Supabase URL, publishable key, `media` bucket, and `media_items` table.
-- Never add a Supabase service-role/secret key to this app or GitHub.
-- The app reads existing media, opens playable media links, supports download requests, and includes email/password sign-up and sign-in screens.
-- Admin and appearance screens are intentionally cautious placeholders. Do not enable uploads/deletes or overwrite shared appearance settings until the live RLS/storage policies and the original logo/cover asset have been verified. No database tables are created or altered by this project.
-- Shared likes/comments/views and write actions are not yet implemented in this initial package.
+## Branding
+- The approved square MS Editor Hub logo is used for launcher icon resources.
+- The same logo is displayed on the black splash screen before Home.
+- Splash screen includes the existing radar scanning animation.
 
 ## Build
-Open the repository in Android Studio, or use the included GitHub Actions workflow to build a debug APK. The project uses Android Gradle Plugin 8.6.1, Kotlin 2.0.20, JDK 17, compile SDK 35.
-
-
-## Branding assets
-- `1000000280.jpg` user-provided logo is included as Android launcher icon resources.
-- `1000000281.jpg` user-provided wide banner is included on the native home screen.
+Use the repository's GitHub Actions workflow **Android APK Build** to build a debug APK. The repository does not include the Gradle wrapper JAR, so use the workflow's installed Gradle 8.9 rather than `./gradlew`.

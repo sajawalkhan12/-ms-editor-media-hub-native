@@ -42,7 +42,7 @@ class AuthActivity : Activity() {
         }
         setContentView(ScrollView(this).apply{
             isFillViewport=true
-            addView(page, ScrollView.LayoutParams(-1,-1))
+            addView(page, android.view.ViewGroup.LayoutParams(-1,-1))
         })
 
         val head=LinearLayout(this).apply{

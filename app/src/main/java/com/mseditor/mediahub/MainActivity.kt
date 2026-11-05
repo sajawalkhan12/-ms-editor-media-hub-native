@@ -1387,6 +1387,8 @@ class MainActivity : Activity() {
         item: MediaItem,
         category: String
     ): Boolean {
+        // Member image/video posts belong to the Home feed, never to admin-managed categories.
+        if (item.storagePath.startsWith("user-posts/")) return false
         val type = item.mediaType.lowercase().replace('-', '_').replace(' ', '_')
         val title = item.title.lowercase()
         val description = item.description.lowercase()

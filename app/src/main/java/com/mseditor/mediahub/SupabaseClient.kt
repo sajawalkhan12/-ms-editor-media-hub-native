@@ -686,7 +686,6 @@ object SupabaseClient {
                     .put("location", location.take(100))
                     .put("avatar_path", avatarPath)
                     .put("cover_path", coverPath)
-                    .put("updated_at", java.time.Instant.now().toString())
                 profileRequest(token, "POST", "profiles?on_conflict=id", body.toString())
                 Unit
             }

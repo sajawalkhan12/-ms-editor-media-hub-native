@@ -389,7 +389,7 @@ object SupabaseClient {
     ) {
         executor.execute {
             val result = runCatching {
-                require(mediaType in listOf("movie", "trailer", "image", "audio")) { "Category valid nahi hai." }
+                require(mediaType in listOf("video_songs", "video_tutorial", "video_prompt", "image_prompt", "presets_assets")) { "Category valid nahi hai." }
                 val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
                 val key = SupabaseConfig.SUPABASE_KEY.trim()
                 fun uploadObject(uri: android.net.Uri, folder: String): String {

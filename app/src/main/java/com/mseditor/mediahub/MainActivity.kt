@@ -674,19 +674,30 @@ class MainActivity : Activity() {
 
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(22))
+            setPadding(dp(12), dp(10), dp(12), dp(22))
             setBackgroundColor(black)
         }
         val toolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        toolbar.addView(actionButton("‹ Back") { showHome() }, LinearLayout.LayoutParams(-2, dp(44)))
-        toolbar.addView(text("MY PROFILE", 19f, gold, true).apply {
+        toolbar.addView(actionButton("‹ Back") { showHome() }, LinearLayout.LayoutParams(-2, dp(42)))
+        toolbar.addView(text("PROFILE", 18f, gold, true).apply {
             gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(0, dp(44), 1f))
+        }, LinearLayout.LayoutParams(0, dp(42), 1f))
+        toolbar.addView(text("⋮", 25f, white, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), 0, dp(8), 0)
+            setOnClickListener {
+                android.app.AlertDialog.Builder(this@MainActivity)
+                    .setItems(arrayOf("Edit Profile", "Back to Home")) { _, which ->
+                        if (which == 0) bio.requestFocus() else showHome()
+                    }.show()
+            }
+        }, LinearLayout.LayoutParams(dp(42), dp(42)))
         page.addView(toolbar)
 
+        // Cover image remains at the top and can still be changed from the gallery.
         val coverFrame = FrameLayout(this).apply {
             background = rounded(panel, gold)
             clipToOutline = true
@@ -697,106 +708,203 @@ class MainActivity : Activity() {
             contentDescription = "Profile cover image"
         }
         coverFrame.addView(coverView, FrameLayout.LayoutParams(-1, -1))
-        val coverButton = actionButton("📷 Change Cover") {
+        coverFrame.addView(actionButton("📷 Cover") {
             openProfileImagePicker(PICK_PROFILE_COVER)
         }.apply {
-            textSize = 12f
-            setPadding(dp(10), dp(7), dp(10), dp(7))
-        }
-        coverFrame.addView(coverButton, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
-            setMargins(0, 0, dp(10), dp(10))
+            textSize = 11f
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+        }, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
+            setMargins(0, 0, dp(9), dp(9))
         })
-        val coverParams = LinearLayout.LayoutParams(-1, dp(170))
-        coverParams.topMargin = dp(14)
-        page.addView(coverFrame, coverParams)
+        page.addView(coverFrame, LinearLayout.LayoutParams(-1, dp(154)).apply { topMargin = dp(8) })
 
-        val avatarRow = LinearLayout(this).apply {
+        val identity = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(12), 0, dp(8))
+            setPadding(dp(4), dp(12), dp(4), dp(8))
         }
         val avatar = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = rounded(panel, emerald)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(panel)
+                setStroke(dp(2), emerald)
+            }
             clipToOutline = true
             contentDescription = "Profile picture"
         }
-        avatarRow.addView(avatar, LinearLayout.LayoutParams(dp(88), dp(88)))
-        val avatarAction = LinearLayout(this).apply {
+        identity.addView(avatar, LinearLayout.LayoutParams(dp(82), dp(82)))
+        val identityText = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), 0, 0, 0)
         }
-        avatarAction.addView(text("Profile Picture", 16f, white, true))
-        avatarAction.addView(actionButton("📷 Change DP") {
+        val displayName = text("Your Name", 19f, white, true)
+        val username = text("@username", 13f, Color.LTGRAY)
+        identityText.addView(displayName)
+        identityText.addView(username)
+        identityText.addView(actionButton("✎ Edit profile photo") {
             openProfileImagePicker(PICK_PROFILE_AVATAR)
-        }, LinearLayout.LayoutParams(-2, dp(42)))
-        avatarRow.addView(avatarAction)
-        page.addView(avatarRow)
+        }.apply { textSize = 11f }, LinearLayout.LayoutParams(-2, dp(36)))
+        identity.addView(identityText, LinearLayout.LayoutParams(0, -2, 1f))
+        page.addView(identity)
 
-        val counts = LinearLayout(this).apply {
+        val ownPosts = allMediaItems.filter { it.createdBy == profileUserId }
+        val stats = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = rounded(panel, gold)
-            setPadding(dp(12), dp(14), dp(12), dp(14))
+            gravity = Gravity.CENTER
+            setPadding(dp(4), dp(12), dp(4), dp(12))
+            background = rounded(panel)
         }
-        val followersValue = text("0", 20f, emerald, true).apply { gravity = Gravity.CENTER }
-        val followingValue = text("0", 20f, emerald, true).apply { gravity = Gravity.CENTER }
-        val followersLabel = text("Followers", 13f, white).apply { gravity = Gravity.CENTER }
-        val followingLabel = text("Following", 13f, white).apply { gravity = Gravity.CENTER }
-        val followersCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-        followersCol.addView(followersValue); followersCol.addView(followersLabel)
-        val followingCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-        followingCol.addView(followingValue); followingCol.addView(followingLabel)
-        counts.addView(followersCol, LinearLayout.LayoutParams(0, -2, 1f))
-        counts.addView(followingCol, LinearLayout.LayoutParams(0, -2, 1f))
-        val countParams = LinearLayout.LayoutParams(-1, -2)
-        countParams.topMargin = dp(10)
-        page.addView(counts, countParams)
+        fun stat(value: String, label: String): LinearLayout {
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                addView(text(value, 19f, white, true).apply { gravity = Gravity.CENTER })
+                addView(text(label, 12f, Color.LTGRAY).apply { gravity = Gravity.CENTER })
+            }
+        }
+        val postsStat = stat(ownPosts.size.toString(), "Posts")
+        val followersStat = stat("0", "Followers")
+        val followingStat = stat("0", "Following")
+        stats.addView(postsStat, LinearLayout.LayoutParams(0, -2, 1f))
+        stats.addView(followersStat, LinearLayout.LayoutParams(0, -2, 1f))
+        stats.addView(followingStat, LinearLayout.LayoutParams(0, -2, 1f))
+        page.addView(stats)
 
-        page.addView(text("Bio", 14f, gold, true).apply { setPadding(0, dp(16), 0, dp(6)) })
+        page.addView(text("Bio", 13f, gold, true).apply { setPadding(dp(4), dp(14), 0, dp(4)) })
         val bio = EditText(this).apply {
             hint = "Apne bare mein likhein..."
-            minLines = 3
-            maxLines = 5
+            minLines = 2
+            maxLines = 4
             gravity = Gravity.TOP
             textSize = 14f
             setTextColor(white)
             setHintTextColor(Color.LTGRAY)
-            setPadding(dp(13), dp(12), dp(13), dp(12))
+            setPadding(dp(10), dp(8), dp(10), dp(8))
             background = rounded(panel, emerald)
         }
         profileBioField = bio
         page.addView(bio, LinearLayout.LayoutParams(-1, -2))
-
-        page.addView(text("Location", 14f, gold, true).apply { setPadding(0, dp(14), 0, dp(6)) })
+        page.addView(text("Location (optional)", 13f, gold, true).apply { setPadding(dp(4), dp(10), 0, dp(4)) })
         val location = EditText(this).apply {
             hint = "City, Country"
             setSingleLine(true)
-            textSize = 14f
+            textSize = 13f
             setTextColor(white)
             setHintTextColor(Color.LTGRAY)
-            setPadding(dp(13), dp(12), dp(13), dp(12))
+            setPadding(dp(10), dp(8), dp(10), dp(8))
             background = rounded(panel, emerald)
         }
         profileLocationField = location
-        page.addView(location, LinearLayout.LayoutParams(-1, dp(48)))
-
-        val save = actionButton("SAVE PROFILE") {
-            val b = bio.text.toString().trim()
-            val l = location.text.toString().trim()
-            Toast.makeText(this, "Profile save ho raha hai...", Toast.LENGTH_SHORT).show()
-            SupabaseClient.saveUserProfile(profileAccessToken, profileUserId, b, l, profileAvatarPath, profileCoverPath) { result ->
+        page.addView(location, LinearLayout.LayoutParams(-1, dp(44)))
+        page.addView(actionButton("SAVE PROFILE") {
+            SupabaseClient.saveUserProfile(
+                profileAccessToken, profileUserId, bio.text.toString().trim(),
+                location.text.toString().trim(), profileAvatarPath, profileCoverPath
+            ) { result ->
                 if (isFinishing || isDestroyed) return@saveUserProfile
                 result.onSuccess {
                     Toast.makeText(this, "Profile save ho gaya.", Toast.LENGTH_LONG).show()
-                    showProfilePage()
                 }.onFailure { e ->
                     Toast.makeText(this, "Profile save nahi hua: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(10) })
+
+        // Story/highlight-style row, ready for future story uploads.
+        page.addView(text("Highlights", 15f, white, true).apply { setPadding(dp(4), dp(18), 0, dp(8)) })
+        val highlights = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        val saveParams = LinearLayout.LayoutParams(-1, dp(50))
-        saveParams.topMargin = dp(18)
-        page.addView(save, saveParams)
+        val addHighlight = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            addView(text("＋", 27f, emerald, true).apply {
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(panel)
+                    setStroke(dp(1), emerald)
+                }
+            }, LinearLayout.LayoutParams(dp(54), dp(54)))
+            addView(text("New", 11f, Color.LTGRAY).apply { gravity = Gravity.CENTER; setPadding(0, dp(4), 0, 0) })
+        }
+        highlights.addView(addHighlight, LinearLayout.LayoutParams(dp(68), -2))
+        page.addView(highlights)
+
+        page.addView(text("Your posts", 16f, white, true).apply { setPadding(dp(4), dp(18), 0, dp(8)) })
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        val grid = android.widget.GridLayout(this).apply {
+            columnCount = 3
+            useDefaultMargins = false
+        }
+        val tabNames = listOf("▦ Posts", "▣ Private", "♡ Likes")
+        tabNames.forEachIndexed { index, label ->
+            tabs.addView(text(label, 12f, if (index == 0) emerald else Color.LTGRAY, true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(4), dp(12), dp(4), dp(12))
+                setOnClickListener {
+                    Toast.makeText(this@MainActivity, if (index == 0) "Aapki posts" else "Is tab ka data abhi available nahi hai.", Toast.LENGTH_SHORT).show()
+                }
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        page.addView(tabs)
+        page.addView(grid, LinearLayout.LayoutParams(-1, -2))
+        fun renderOwnPosts(items: List<MediaItem>) {
+            grid.removeAllViews()
+            val mine = items.filter { it.createdBy == profileUserId }
+            postsStat.getChildAt(0).let { (it as? TextView)?.text = mine.size.toString() }
+            if (mine.isEmpty()) {
+                page.findViewWithTag<TextView>("empty_profile_posts")?.let { page.removeView(it) }
+                val empty = text("Abhi koi post upload nahi ki gayi.", 13f, Color.LTGRAY).apply {
+                    tag = "empty_profile_posts"
+                    gravity = Gravity.CENTER
+                    setPadding(dp(8), dp(24), dp(8), dp(24))
+                }
+                page.addView(empty, page.indexOfChild(grid) + 1, LinearLayout.LayoutParams(-1, -2))
+            } else {
+                page.findViewWithTag<TextView>("empty_profile_posts")?.let { page.removeView(it) }
+                mine.forEach { item ->
+                    val tile = FrameLayout(this).apply {
+                        setBackgroundColor(panel)
+                        clipToOutline = true
+                    }
+                    val thumb = ImageView(this).apply {
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        setBackgroundColor(panel)
+                    }
+                    tile.addView(thumb, FrameLayout.LayoutParams(-1, dp(118)))
+                    val source = if (item.posterPath.isNotBlank()) item.posterPath else item.storagePath
+                    val imageUrl = SupabaseClient.getPublicMediaUrl(source)
+                    if (item.mediaType == "image_prompt" || item.posterPath.isNotBlank()) {
+                        imageExecutor.execute {
+                            val bitmap = runCatching {
+                                val c = URL(imageUrl).openConnection() as HttpURLConnection
+                                try { c.connectTimeout = 12000; c.readTimeout = 15000; c.inputStream.use { BitmapFactory.decodeStream(it) } }
+                                finally { c.disconnect() }
+                            }.getOrNull()
+                            mainHandler.post { if (!isFinishing && !isDestroyed && bitmap != null) thumb.setImageBitmap(bitmap) }
+                        }
+                    } else {
+                        thumb.setImageDrawable(android.graphics.drawable.GradientDrawable().apply {
+                            setColor(panel)
+                        })
+                        thumb.setImageResource(android.R.drawable.ic_media_play)
+                    }
+                    grid.addView(tile, android.widget.GridLayout.LayoutParams().apply {
+                        width = 0
+                        height = dp(118)
+                        columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
+                        setMargins(dp(2), dp(2), dp(2), dp(2))
+                    })
+                }
+            }
+        }
+        renderOwnPosts(allMediaItems)
 
         val scroll = ScrollView(this).apply {
             isFillViewport = true
@@ -805,15 +913,23 @@ class MainActivity : Activity() {
         }
         setContentView(scroll)
 
+        SupabaseClient.getMediaItems { mediaResult ->
+            if (!isFinishing && !isDestroyed) mediaResult.onSuccess { items ->
+                allMediaItems = items
+                renderOwnPosts(items)
+            }
+        }
         SupabaseClient.getUserProfile(profileAccessToken, profileUserId) { result ->
             if (isFinishing || isDestroyed) return@getUserProfile
             result.onSuccess { profile ->
                 profileAvatarPath = profile.avatarPath
                 profileCoverPath = profile.coverPath
+                displayName.text = profile.displayName.ifBlank { profile.username.ifBlank { "Your Name" } }
+                username.text = if (profile.username.isBlank()) "@username" else "@${profile.username.removePrefix("@")}"
                 bio.setText(profile.bio)
                 location.setText(profile.location)
-                followersValue.text = profile.followers.toString()
-                followingValue.text = profile.following.toString()
+                followersStat.getChildAt(0).let { (it as? TextView)?.text = profile.followers.toString() }
+                followingStat.getChildAt(0).let { (it as? TextView)?.text = profile.following.toString() }
                 loadProfileImage(avatar, profileAvatarPath)
                 loadProfileImage(coverView, profileCoverPath)
             }.onFailure { e ->

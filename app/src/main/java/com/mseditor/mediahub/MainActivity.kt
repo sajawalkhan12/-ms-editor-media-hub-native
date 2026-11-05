@@ -690,9 +690,8 @@ class MainActivity : Activity() {
             setPadding(dp(12), 0, dp(8), 0)
             setOnClickListener {
                 android.app.AlertDialog.Builder(this@MainActivity)
-                    .setItems(arrayOf("Edit Profile", "Back to Home")) { _, which ->
-                        if (which == 0) bio.requestFocus() else showHome()
-                    }.show()
+                    .setItems(arrayOf("Back to Home")) { _, _ -> showHome() }
+                    .show()
             }
         }, LinearLayout.LayoutParams(dp(42), dp(42)))
         page.addView(toolbar)

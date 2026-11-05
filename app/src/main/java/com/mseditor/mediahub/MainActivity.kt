@@ -118,7 +118,12 @@ class MainActivity : Activity() {
             if (!isFinishing && !isDestroyed) {
                 @Suppress("DEPRECATION")
                 window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                showHome()
+                val loggedIn = getSharedPreferences("auth_session", MODE_PRIVATE)
+                    .getString("access_token", null).orEmpty().isNotBlank()
+                if (loggedIn) showHome() else {
+                    startActivity(Intent(this, AuthActivity::class.java))
+                    finish()
+                }
             }
         }
         mainHandler.postDelayed(splashRunnable!!, 2200L)

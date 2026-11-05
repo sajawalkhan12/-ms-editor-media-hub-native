@@ -226,6 +226,19 @@ class MainActivity : Activity() {
         brandRow.addView(brandTitle, LinearLayout.LayoutParams(0, -2, 1f))
         brand.addView(brandRow)
         brand.addView(text("Video Songs • Tutorials • Prompts", 12f, gold))
+        // Hidden admin access: tap the brand header 7 times within 2.5 seconds.
+        brandRow.setOnClickListener {
+            hiddenAdminTapCount++
+            hiddenAdminTapReset?.let { mainHandler.removeCallbacks(it) }
+            if (hiddenAdminTapCount >= 7) {
+                hiddenAdminTapCount = 0
+                hiddenAdminTapReset = null
+                showAdminLogin()
+            } else {
+                hiddenAdminTapReset = Runnable { hiddenAdminTapCount = 0 }
+                mainHandler.postDelayed(hiddenAdminTapReset!!, 2500L)
+            }
+        }
         header.addView(brand)
         loadHeaderLogo(brandLogo)
 
@@ -446,14 +459,15 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun showHiddenAdminGate() {
-        val codeField = EditText(this).apply {
-            hint = "Private access code"
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            setTextColor(white)
-            setHintTextColor(Color.LTGRAY)
-            setPadding(dp(14), dp(12), dp(14), dp(18))
+    private fun showAdminLogin() {
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(28), dp(22), dp(24))
+            setBackgroundColor(black)
+        }
+        page.addView(text("MS EDITOR MEDIA HUB", 16f, gold, true))
+        page.addView(text("ADMIN LOGIN", 25f, emerald, true).apply {
+            setPadding(0, dp(22), 0, dp(8))
         })
         page.addView(text("Yeh private admin page hai. Sirf approved admin account ko access milega.", 14f, Color.LTGRAY))
         val email = EditText(this).apply {

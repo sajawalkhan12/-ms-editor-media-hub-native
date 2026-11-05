@@ -671,6 +671,8 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
         val token = prefs.getString("access_token", "").orEmpty()
         val userId = prefs.getString("user_id", "").orEmpty()
+        profileAccessToken = token
+        profileUserId = userId
         if (token.isBlank() || userId.isBlank()) {
             startActivity(Intent(this, AuthActivity::class.java))
             finish()
@@ -686,6 +688,58 @@ class MainActivity : Activity() {
         page.addView(actionButton("‹ Back to Profile") { showProfilePage() }, LinearLayout.LayoutParams(-1, dp(44)))
         page.addView(text("UPLOAD POST", 24f, emerald, true).apply { setPadding(0, dp(20), 0, dp(5)) })
         page.addView(text("Share an image or video on your profile", 13f, gold).apply { setPadding(0, 0, 0, dp(18)) })
+
+        val profileCoverPreview = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setBackgroundColor(panel)
+            contentDescription = "Profile cover image preview"
+        }
+        page.addView(profileCoverPreview, LinearLayout.LayoutParams(-1, dp(110)).apply { topMargin = dp(8) })
+        loadProfileImage(profileCoverPreview, profileCoverPath)
+        page.addView(actionButton("Cover Image") {
+            openProfileImagePicker(PICK_PROFILE_COVER)
+        }, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8) })
+        page.addView(actionButton("Edit Profile Photo") {
+            openProfileImagePicker(PICK_PROFILE_AVATAR)
+        }, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8) })
+
+        val bioField = EditText(this).apply {
+            hint = "Apne bare mein likhein..."
+            setText(profileBioField?.text?.toString().orEmpty())
+            minLines = 2; maxLines = 4; gravity = Gravity.TOP
+            setTextColor(white); setHintTextColor(Color.LTGRAY)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = rounded(panel, emerald)
+        }
+        profileBioField = bioField
+        page.addView(text("Bio", 13f, gold, true).apply { setPadding(0, dp(12), 0, dp(4)) })
+        page.addView(bioField, LinearLayout.LayoutParams(-1, -2))
+        val locationField = EditText(this).apply {
+            hint = "City, Country"
+            setSingleLine(true)
+            setText(profileLocationField?.text?.toString().orEmpty())
+            setTextColor(white); setHintTextColor(Color.LTGRAY)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = rounded(panel, emerald)
+        }
+        profileLocationField = locationField
+        page.addView(text("Location (optional)", 13f, gold, true).apply { setPadding(0, dp(10), 0, dp(4)) })
+        page.addView(locationField, LinearLayout.LayoutParams(-1, dp(44)))
+        page.addView(actionButton("SAVE PROFILE") {
+            SupabaseClient.saveUserProfile(
+                profileAccessToken, profileUserId, bioField.text.toString().trim(),
+                locationField.text.toString().trim(), profileAvatarPath, profileCoverPath
+            ) { saved ->
+                if (isFinishing || isDestroyed) return@saveUserProfile
+                saved.onSuccess {
+                    Toast.makeText(this, "Profile save ho gaya.", Toast.LENGTH_LONG).show()
+                    showProfilePage()
+                }.onFailure { e ->
+                    Toast.makeText(this, "Profile save nahi hua: " + e.message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(10) })
+
         val titleField = EditText(this).apply {
             hint = "Post title"
             setSingleLine(true)
@@ -792,14 +846,6 @@ class MainActivity : Activity() {
             contentDescription = "Profile cover image"
         }
         coverFrame.addView(coverView, FrameLayout.LayoutParams(-1, -1))
-        coverFrame.addView(actionButton("📷 Cover") {
-            openProfileImagePicker(PICK_PROFILE_COVER)
-        }.apply {
-            textSize = 11f
-            setPadding(dp(8), dp(5), dp(8), dp(5))
-        }, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
-            setMargins(0, 0, dp(9), dp(9))
-        })
         page.addView(coverFrame, LinearLayout.LayoutParams(-1, dp(154)).apply { topMargin = dp(8) })
 
         val identity = LinearLayout(this).apply {
@@ -826,9 +872,6 @@ class MainActivity : Activity() {
         val username = text("@username", 13f, Color.LTGRAY)
         identityText.addView(displayName)
         identityText.addView(username)
-        identityText.addView(actionButton("✎ Edit profile photo") {
-            openProfileImagePicker(PICK_PROFILE_AVATAR)
-        }.apply { textSize = 11f }, LinearLayout.LayoutParams(-2, dp(36)))
         identity.addView(identityText, LinearLayout.LayoutParams(0, -2, 1f))
         page.addView(identity)
 
@@ -856,47 +899,6 @@ class MainActivity : Activity() {
         page.addView(stats)
         page.addView(actionButton("＋  Upload Post") { showUserUploadPostPage() },
             LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(12) })
-
-        page.addView(text("Bio", 13f, gold, true).apply { setPadding(dp(4), dp(14), 0, dp(4)) })
-        val bio = EditText(this).apply {
-            hint = "Apne bare mein likhein..."
-            minLines = 2
-            maxLines = 4
-            gravity = Gravity.TOP
-            textSize = 14f
-            setTextColor(white)
-            setHintTextColor(Color.LTGRAY)
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = rounded(panel, emerald)
-        }
-        profileBioField = bio
-        page.addView(bio, LinearLayout.LayoutParams(-1, -2))
-        page.addView(text("Location (optional)", 13f, gold, true).apply { setPadding(dp(4), dp(10), 0, dp(4)) })
-        val location = EditText(this).apply {
-            hint = "City, Country"
-            setSingleLine(true)
-            textSize = 13f
-            setTextColor(white)
-            setHintTextColor(Color.LTGRAY)
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = rounded(panel, emerald)
-        }
-        profileLocationField = location
-        page.addView(location, LinearLayout.LayoutParams(-1, dp(44)))
-        page.addView(actionButton("SAVE PROFILE") {
-            SupabaseClient.saveUserProfile(
-                profileAccessToken, profileUserId, bio.text.toString().trim(),
-                location.text.toString().trim(), profileAvatarPath, profileCoverPath
-            ) { result ->
-                if (isFinishing || isDestroyed) return@saveUserProfile
-                result.onSuccess {
-                    Toast.makeText(this, "Profile save ho gaya.", Toast.LENGTH_LONG).show()
-                    showProfilePage()
-                }.onFailure { e ->
-                    Toast.makeText(this, "Profile save nahi hua: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(10) })
 
         // Story/highlight-style row, ready for future story uploads.
         page.addView(text("Highlights", 15f, white, true).apply { setPadding(dp(4), dp(18), 0, dp(8)) })
@@ -1011,6 +1013,8 @@ class MainActivity : Activity() {
             result.onSuccess { profile ->
                 profileAvatarPath = profile.avatarPath
                 profileCoverPath = profile.coverPath
+                profileBioField?.setText(profile.bio)
+                profileLocationField?.setText(profile.location)
                 val cleanUsername = profile.username.trim().removePrefix("@").trim()
                 val cleanDisplayName = profile.displayName.trim().removePrefix("@").trim()
                 // Never show the username twice if it was also saved as the display name.

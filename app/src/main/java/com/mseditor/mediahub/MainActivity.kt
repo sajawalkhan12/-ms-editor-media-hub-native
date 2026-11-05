@@ -71,6 +71,7 @@ class MainActivity : Activity() {
     private val PICK_USER_POST_FILE = 4106
     private var selectedUserPostUri: Uri? = null
     private var selectedUserPostType: String = ""
+    private var userPostSelectedLabel: TextView? = null
     private var profileAvatarPath = ""
     private var profileCoverPath = ""
     private var profileAccessToken = ""
@@ -700,6 +701,7 @@ class MainActivity : Activity() {
             background = rounded(panel, emerald)
         }
         val selectedLabel = text("No image or video selected", 13f, Color.LTGRAY)
+        userPostSelectedLabel = selectedLabel
         val status = text("Choose an image or video to upload.", 13f, gold)
         page.addView(titleField, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
         page.addView(descriptionField, LinearLayout.LayoutParams(-1, dp(100)).apply { topMargin = dp(10) })
@@ -965,7 +967,7 @@ class MainActivity : Activity() {
                     tile.addView(thumb, FrameLayout.LayoutParams(-1, dp(118)))
                     val source = if (item.posterPath.isNotBlank()) item.posterPath else item.storagePath
                     val imageUrl = SupabaseClient.getPublicMediaUrl(source)
-                    if (item.mediaType == "image_prompt" || item.posterPath.isNotBlank()) {
+                    if (item.mediaType == "image" || item.mediaType == "image_prompt" || item.posterPath.isNotBlank()) {
                         imageExecutor.execute {
                             val bitmap = runCatching {
                                 val c = URL(imageUrl).openConnection() as HttpURLConnection
@@ -1009,8 +1011,11 @@ class MainActivity : Activity() {
             result.onSuccess { profile ->
                 profileAvatarPath = profile.avatarPath
                 profileCoverPath = profile.coverPath
-                displayName.text = profile.displayName.ifBlank { " " }
-                username.text = if (profile.username.isBlank()) "@username" else "@${profile.username.removePrefix("@")}"
+                val cleanUsername = profile.username.removePrefix("@")
+                val cleanDisplayName = profile.displayName.trim()
+                displayName.text = cleanDisplayName
+                displayName.visibility = if (cleanDisplayName.isBlank() || cleanDisplayName.equals(cleanUsername, ignoreCase = true)) View.GONE else View.VISIBLE
+                username.text = if (cleanUsername.isBlank()) "@username" else "@$cleanUsername"
                 bio.setText(profile.bio)
                 location.setText(profile.location)
                 followersStat.getChildAt(0).let { (it as? TextView)?.text = profile.followers.toString() }
@@ -1093,6 +1098,7 @@ class MainActivity : Activity() {
             PICK_PROFILE_AVATAR -> uploadSelectedProfileImage(uri, "avatar")
             PICK_USER_POST_FILE -> {
                 selectedUserPostUri = uri
+                userPostSelectedLabel?.text = if (selectedUserPostType == "image") "Image selected: " + (uri.lastPathSegment ?: "Gallery image") else "Video selected: " + (uri.lastPathSegment ?: "Gallery video")
                 Toast.makeText(this, if (selectedUserPostType == "image") "Image select ho gayi." else "Video select ho gayi.", Toast.LENGTH_SHORT).show()
             }
             PICK_LOGO_FILE -> {

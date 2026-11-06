@@ -882,6 +882,73 @@ object SupabaseClient {
         } finally { connection.disconnect() }
     }
 
+    fun saveUserIdentity(token: String, userId: String, displayName: String, username: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                val body = JSONObject()
+                    .put("id", userId)
+                    .put("display_name", displayName.take(80))
+                    .put("username", username.take(30))
+                profileRequest(token, "POST", "profiles?on_conflict=id", body.toString())
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun saveProfileImages(token: String, userId: String, avatarPath: String, coverPath: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                val body = JSONObject()
+                    .put("id", userId)
+                    .put("avatar_path", avatarPath)
+                    .put("cover_path", coverPath)
+                profileRequest(token, "POST", "profiles?on_conflict=id", body.toString())
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun getSignedPrivateMediaUrl(storagePath: String, token: String, callback: (Result<String>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank()) { "Private post dekhne ke liye login zaroori hai." }
+                require(storagePath.startsWith("private-user-posts/")) { "Private media path sahi nahi hai." }
+                val objectPath = storagePath.removePrefix("private-user-posts/")
+                val encoded = objectPath.split("/").joinToString("/") {
+                    URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                }
+                val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                val connection = URL("$base/storage/v1/object/sign/private-user-posts/$encoded").openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 20000
+                    connection.readTimeout = 30000
+                    connection.doOutput = true
+                    connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    connection.setRequestProperty("Authorization", "Bearer $token")
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use {
+                        it.write(JSONObject().put("expiresIn", 3600).toString().toByteArray(Charsets.UTF_8))
+                    }
+                    val code = connection.responseCode
+                    val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Private media HTTP $code: $response")
+                    val signed = JSONObject(response).optString("signedURL").ifBlank {
+                        JSONObject(response).optString("signedUrl")
+                    }
+                    require(signed.isNotBlank()) { "Signed media link nahi mili." }
+                    if (signed.startsWith("http")) signed else base + if (signed.startsWith("/")) signed else "/$signed"
+                } finally { connection.disconnect() }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
     fun getUserProfile(token: String, userId: String, callback: (Result<UserProfile>) -> Unit) {
         executor.execute {
             val result = runCatching {

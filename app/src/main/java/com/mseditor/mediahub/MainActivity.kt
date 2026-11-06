@@ -351,14 +351,14 @@ class MainActivity : Activity() {
             setPadding(2, dp(8), 2, dp(8))
         }
 
-        // Fixed navigation follows the approved PDF; Assets remains visible even when empty.
+        // Bottom navigation: replace Assets with a direct User Profile shortcut.
         val bottomItems = listOf(
             "⌂\nHome",
             "♫\nVideo Songs",
             "▷\nVideo Tutorial",
             "✧\nVideo Prompt",
             "▧\nImage Prompt",
-            "▦\nPresets & Assets"
+            "♙\nUser Profile"
         )
 
         bottomItems.forEach { item ->
@@ -366,9 +366,12 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER
                 setPadding(dp(3), dp(7), dp(3), dp(7))
                 setOnClickListener {
-                    val category = item.substringAfter("\n")
-                    if (category == "Home") showHome()
-                    else showCategory(category)
+                    val destination = item.substringAfter("\n")
+                    when (destination) {
+                        "Home" -> showHome()
+                        "User Profile" -> showProfilePage()
+                        else -> showCategory(destination)
+                    }
                 }
             }
 

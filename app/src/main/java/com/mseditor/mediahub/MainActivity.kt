@@ -986,7 +986,7 @@ private fun openProfileImagePicker(requestCode: Int) {
                 SupabaseClient.saveProfileImages(
                     profileAccessToken, profileUserId, profileAvatarPath, profileCoverPath
                 ) { saved ->
-                    if (isFinishing || isDestroyed) return@saveUserProfile
+                    if (isFinishing || isDestroyed) return@saveProfileImages
                     saved.onSuccess {
                         Toast.makeText(this, if (kind == "avatar") "DP update ho gayi." else "Cover image update ho gayi.", Toast.LENGTH_LONG).show()
                         if (returnToUploadPostAfterImageEdit) {
@@ -1329,7 +1329,7 @@ private fun openProfileImagePicker(requestCode: Int) {
                 background = rounded(panel, emerald)
             }
 
-            val isMemberPost = item.storagePath.startsWith("user-posts/") || item.storagePath.startsWith("private-user-posts/") || item.externalUrl.isNotBlank()
+            val isMemberPost = item.createdBy.isNotBlank() && (item.storagePath.startsWith("user-posts/") || item.storagePath.startsWith("private-user-posts/") || item.externalUrl.isNotBlank())
             if (isMemberPost) {
                 val authorRow = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL

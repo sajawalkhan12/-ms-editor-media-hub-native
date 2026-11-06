@@ -80,6 +80,7 @@ class MainActivity : Activity() {
     private var profileBioField: EditText? = null
     private var profileLocationField: EditText? = null
     private var returnToUploadPostAfterImageEdit = false
+    private var uploadCoverPreview: ImageView? = null
     private var selectedUploadUri: Uri? = null
     private var selectedPosterUri: Uri? = null
 
@@ -730,6 +731,7 @@ class MainActivity : Activity() {
             selectedVisibility = if (checkedId == privateChoice.id) "private" else "public"
         }
         postBox.addView(visibilityGroup)
+        postBox.addView(text("Note: Private Post mein pasted external link app mein hidden rahega, lekin original link provider par public ho sakta hai. Zyada privacy ke liye file upload karein.", 11f, Color.LTGRAY))
         addBoxButton(postBox, "🎬  Video Upload") {
             selectedUserPostType = "video"
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -783,6 +785,7 @@ class MainActivity : Activity() {
             scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(black)
             contentDescription = "Cover image preview"
         }
+        uploadCoverPreview = coverPreview
         profileBox.addView(coverPreview, LinearLayout.LayoutParams(-1, dp(100)))
         addBoxButton(profileBox, "Cover Image — Gallery se") {
             returnToUploadPostAfterImageEdit = true
@@ -990,7 +993,7 @@ private fun openProfileImagePicker(requestCode: Int) {
                         Toast.makeText(this, if (kind == "avatar") "DP update ho gayi." else "Cover image update ho gayi.", Toast.LENGTH_LONG).show()
                         if (returnToUploadPostAfterImageEdit) {
                             returnToUploadPostAfterImageEdit = false
-                            showUserUploadPostPage()
+                            if (kind == "cover") uploadCoverPreview?.let { loadProfileImage(it, profileCoverPath) }
                         } else {
                             showProfilePage()
                         }

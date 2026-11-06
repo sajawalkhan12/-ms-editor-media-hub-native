@@ -983,11 +983,8 @@ private fun openProfileImagePicker(requestCode: Int) {
             if (isFinishing || isDestroyed) return@uploadProfileImage
             result.onSuccess { path ->
                 if (kind == "avatar") profileAvatarPath = path else profileCoverPath = path
-                SupabaseClient.saveUserProfile(
-                    profileAccessToken, profileUserId,
-                    profileBioField?.text?.toString().orEmpty(),
-                    profileLocationField?.text?.toString().orEmpty(),
-                    profileAvatarPath, profileCoverPath
+                SupabaseClient.saveProfileImages(
+                    profileAccessToken, profileUserId, profileAvatarPath, profileCoverPath
                 ) { saved ->
                     if (isFinishing || isDestroyed) return@saveUserProfile
                     saved.onSuccess {

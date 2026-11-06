@@ -917,12 +917,12 @@ class MainActivity : Activity() {
                 displayName.visibility = if (cleanDisplayName.isBlank() || cleanDisplayName.equals(cleanUsername, ignoreCase = true)) View.GONE else View.VISIBLE
                 username.text = if (cleanUsername.isBlank()) "@username" else "@$cleanUsername"
                 profileBioText.text = profile.bio; profileBioText.visibility = if (profile.bio.isBlank()) View.GONE else View.VISIBLE
-                profileLocationText.text = if (profile.location.isBlank()) "" else "📍 \${profile.location}"
+                profileLocationText.text = if (profile.location.isBlank()) "" else "📍 ${profile.location}"
                 profileLocationText.visibility = if (profile.location.isBlank()) View.GONE else View.VISIBLE
                 followersStat.getChildAt(0).let { (it as? TextView)?.text = profile.followers.toString() }
                 followingStat.getChildAt(0).let { (it as? TextView)?.text = profile.following.toString() }
                 loadProfileImage(avatar, profileAvatarPath); loadProfileImage(coverView, profileCoverPath)
-            }.onFailure { e -> Toast.makeText(this, "Profile load nahi hua: \${e.message}", Toast.LENGTH_LONG).show() }
+            }.onFailure { e -> Toast.makeText(this, "Profile load nahi hua: ${e.message}", Toast.LENGTH_LONG).show() }
         }
     }
 
@@ -1478,7 +1478,7 @@ class MainActivity : Activity() {
                     filterMediaItems(query)
                 }
             }.onFailure { error ->
-                Toast.makeText(this, "Posts refresh nahi huin: \${error.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Posts refresh nahi huin: ${error.message}", Toast.LENGTH_LONG).show()
             }
         }
     }

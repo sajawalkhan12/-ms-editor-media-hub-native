@@ -986,7 +986,6 @@ private fun openProfileImagePicker(requestCode: Int) {
                 SupabaseClient.saveProfileImages(
                     profileAccessToken, profileUserId, profileAvatarPath, profileCoverPath
                 ) { saved ->
-                    if (isFinishing || isDestroyed) return@saveProfileImages
                     saved.onSuccess {
                         Toast.makeText(this, if (kind == "avatar") "DP update ho gayi." else "Cover image update ho gayi.", Toast.LENGTH_LONG).show()
                         if (returnToUploadPostAfterImageEdit) {

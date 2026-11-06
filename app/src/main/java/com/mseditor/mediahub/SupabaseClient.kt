@@ -23,7 +23,8 @@ data class MediaItem(
     val createdAt: String,
     val profileUsername: String = "",
     val profileDisplayName: String = "",
-    val profileAvatarPath: String = ""
+    val profileAvatarPath: String = "",
+    val visibility: String = "public"
 )
 
 object SupabaseClient {
@@ -32,6 +33,7 @@ object SupabaseClient {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     fun getMediaItems(
+        token: String? = null,
         callback: (Result<List<MediaItem>>) -> Unit
     ) {
         executor.execute {
@@ -62,9 +64,10 @@ object SupabaseClient {
                     connection.useCaches = false
 
                     connection.setRequestProperty("apikey", apiKey)
+                    val requestToken = token?.takeIf { it.isNotBlank() } ?: apiKey
                     connection.setRequestProperty(
                         "Authorization",
-                        "Bearer $apiKey"
+                        "Bearer $requestToken"
                     )
                     connection.setRequestProperty(
                         "Accept",
@@ -316,7 +319,8 @@ object SupabaseClient {
                     externalUrl = cleanJsonString(item, "external_url"),
                     posterPath = cleanJsonString(item, "poster_path"),
                     createdBy = cleanJsonString(item, "created_by"),
-                    createdAt = cleanJsonString(item, "created_at")
+                    createdAt = cleanJsonString(item, "created_at"),
+                    visibility = cleanJsonString(item, "visibility").ifBlank { "public" }
                 )
             )
         }

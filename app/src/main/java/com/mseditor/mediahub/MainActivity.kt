@@ -925,7 +925,8 @@ class MainActivity : Activity() {
                 memberPosts = items.filter {
                     it.createdBy == profileUserId &&
                         (it.storagePath.startsWith("user-posts/") ||
-                         it.storagePath.startsWith("private-user-posts/"))
+                         it.storagePath.startsWith("private-user-posts/") ||
+                         (it.externalUrl.isNotBlank() && it.mediaType.equals("movie", true)))
                 }
                 (postsStat.getChildAt(0) as? TextView)?.text = memberPosts.size.toString()
                 renderProfilePosts()
@@ -1283,7 +1284,7 @@ private fun openProfileImagePicker(requestCode: Int) {
         val isUserPost = item.createdBy.isNotBlank() &&
             (item.storagePath.startsWith("user-posts/") ||
              item.storagePath.startsWith("private-user-posts/") ||
-             item.externalUrl.isNotBlank())
+             (item.externalUrl.isNotBlank() && item.mediaType.equals("movie", true)))
         if (isUserPost || item.visibility != "public") return false
         val type = item.mediaType.lowercase().replace('-', '_').replace(' ', '_')
         val title = item.title.lowercase()
@@ -1340,7 +1341,7 @@ private fun openProfileImagePicker(requestCode: Int) {
             val isMemberPost = item.createdBy.isNotBlank() &&
                 (item.storagePath.startsWith("user-posts/") ||
                  item.storagePath.startsWith("private-user-posts/") ||
-                 item.externalUrl.isNotBlank())
+                 (item.externalUrl.isNotBlank() && item.mediaType.equals("movie", true)))
             if (isMemberPost) {
                 val authorRow = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL

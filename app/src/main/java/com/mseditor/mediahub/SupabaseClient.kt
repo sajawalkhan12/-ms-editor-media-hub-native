@@ -536,22 +536,22 @@ object SupabaseClient {
             val result = runCatching {
                 require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
                 require(item.id.isNotBlank() && item.createdBy == userId) { "Yeh post aapke account ki nahi hai." }
-                require(item.storagePath.startsWith("user-posts/$userId/")) { "Sirf apni user post delete kar sakte hain." }
-
-                // Remove only this user's object through the Storage API.
-                val storageBody = JSONObject().put("prefixes", JSONArray().put(item.storagePath)).toString()
-                profileRequest(token, "DELETE", "object/media", storageBody, storage = true)
-
-                // Return the deleted row so an RLS-filtered/no-op delete is never reported as success.
+                val storedPath = item.storagePath
+                if (storedPath.startsWith("user-posts/$userId/")) {
+                    val storageBody = JSONObject().put("prefixes", JSONArray().put(storedPath)).toString()
+                    profileRequest(token, "DELETE", "object/media", storageBody, storage = true)
+                } else if (storedPath.startsWith("private-user-posts/$userId/")) {
+                    val privateObjectPath = storedPath.removePrefix("private-user-posts/")
+                    val storageBody = JSONObject().put("prefixes", JSONArray().put(privateObjectPath)).toString()
+                    profileRequest(token, "DELETE", "object/private-user-posts", storageBody, storage = true)
+                } else {
+                    require(storedPath.isBlank() && item.externalUrl.isNotBlank()) {
+                        "Sirf apni user post delete kar sakte hain."
+                    }
+                }
                 val id = URLEncoder.encode(item.id, "UTF-8")
-                val encodedPath = URLEncoder.encode(item.storagePath, "UTF-8")
                 val deletedRows = JSONArray(
-                    profileRequest(
-                        token,
-                        "DELETE",
-                        "media_items?id=eq.$id&created_by=eq.$userId&storage_path=eq." + encodedPath,
-                        prefer = "return=representation"
-                    )
+                    profileRequest(token, "DELETE", "media_items?id=eq.$id&created_by=eq.$userId", prefer = "return=representation")
                 )
                 if (deletedRows.length() == 0) {
                     throw Exception("Post database se delete nahi hui. Login dobara karein ya delete permission check karein.")

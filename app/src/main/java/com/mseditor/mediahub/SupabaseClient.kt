@@ -570,12 +570,14 @@ object SupabaseClient {
         mediaKind: String,
         title: String,
         description: String,
+        visibility: String = "public",
         callback: (Result<Unit>) -> Unit
     ) {
         executor.execute {
             val result = runCatching {
                 require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
                 require(mediaKind == "image" || mediaKind == "video") { "Image ya video select karein." }
+                require(visibility == "public" || visibility == "private") { "Post privacy select karein." }
                 val resolver = context.contentResolver
                 val mime = resolver.getType(mediaUri) ?: "application/octet-stream"
                 require(if (mediaKind == "image") mime.startsWith("image/") else mime.startsWith("video/")) {
@@ -587,12 +589,16 @@ object SupabaseClient {
                     }
                 } catch (_: Exception) { null } ?: if (mediaKind == "image") "image" else "video"
                 val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
-                val objectPath = "user-posts/$userId/${java.util.UUID.randomUUID()}_$safeName"
+                val privatePost = visibility == "private"
+                val bucket = if (privatePost) "private-user-posts" else "media"
+                val objectPath = if (privatePost) "$userId/${java.util.UUID.randomUUID()}_$safeName"
+                    else "user-posts/$userId/${java.util.UUID.randomUUID()}_$safeName"
+                val storedPath = if (privatePost) "private-user-posts/$objectPath" else objectPath
                 val encoded = objectPath.split("/").joinToString("/") {
                     URLEncoder.encode(it, "UTF-8").replace("+", "%20")
                 }
                 val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
-                val upload = URL("$base/storage/v1/object/media/$encoded").openConnection() as HttpURLConnection
+                val upload = URL("$base/storage/v1/object/$bucket/$encoded").openConnection() as HttpURLConnection
                 try {
                     upload.requestMethod = "POST"
                     upload.connectTimeout = 30000
@@ -616,10 +622,11 @@ object SupabaseClient {
                     .put("title", title.take(160))
                     .put("description", description.take(2000))
                     .put("media_type", if (mediaKind == "image") "image" else "movie")
-                    .put("storage_path", objectPath)
+                    .put("storage_path", storedPath)
                     .put("external_url", "")
                     .put("poster_path", "")
                     .put("created_by", userId)
+                    .put("visibility", visibility)
                     .toString()
                 val insert = URL("$base/rest/v1/media_items").openConnection() as HttpURLConnection
                 try {
@@ -638,6 +645,40 @@ object SupabaseClient {
                         ?.bufferedReader()?.use { it.readText() }.orEmpty()
                     if (code !in 200..299) throw Exception("Post record HTTP $code: $response")
                 } finally { insert.disconnect() }
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun uploadUserPostLink(
+        token: String,
+        userId: String,
+        mediaUrl: String,
+        title: String,
+        description: String,
+        visibility: String,
+        callback: (Result<Unit>) -> Unit
+    ) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                val cleanUrl = mediaUrl.trim()
+                require(cleanUrl.startsWith("https://") || cleanUrl.startsWith("http://")) {
+                    "Sahi http/https media link paste karein."
+                }
+                require(visibility == "public" || visibility == "private") { "Post privacy select karein." }
+                val body = JSONObject()
+                    .put("title", title.take(160))
+                    .put("description", description.take(2000))
+                    .put("media_type", "movie")
+                    .put("storage_path", "")
+                    .put("external_url", cleanUrl)
+                    .put("poster_path", "")
+                    .put("created_by", userId)
+                    .put("visibility", visibility)
+                    .toString()
+                profileRequest(token, "POST", "media_items", body)
                 Unit
             }
             mainHandler.post { callback(result) }

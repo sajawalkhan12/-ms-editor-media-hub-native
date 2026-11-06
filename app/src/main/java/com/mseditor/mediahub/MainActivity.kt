@@ -467,7 +467,7 @@ class MainActivity : Activity() {
             item("Upload Media") { showUploadForm() }
         }
         section("ACCOUNT")
-        item("My Profile") { showProfilePage() }
+        item("🌐 MS Editor Media Hub") { openAdminWebsite("MS Editor Media Hub") }
         section("APP")
         item("Back to Home") { showHome() }
         item("Exit App") { finish() }
@@ -861,13 +861,7 @@ class MainActivity : Activity() {
         val identityText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0) }
         val nameLine = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val displayName = text("Your Name", 18f, white, true)
-        val profileBrand = text("🌐 MS Editor Media Hub", 11f, gold, true).apply {
-            setPadding(dp(7), 0, 0, 0)
-            isClickable = true
-            setOnClickListener { openAdminWebsite("MS Editor Media Hub") }
-        }
-        nameLine.addView(displayName, LinearLayout.LayoutParams(0, -2, 1f))
-        nameLine.addView(profileBrand, LinearLayout.LayoutParams(-2, -2))
+        nameLine.addView(displayName, LinearLayout.LayoutParams(-1, -2))
         val username = text("@username", 13f, Color.LTGRAY)
         identityText.addView(nameLine); identityText.addView(username)
         identity.addView(identityText, LinearLayout.LayoutParams(0, -2, 1f)); page.addView(identity)

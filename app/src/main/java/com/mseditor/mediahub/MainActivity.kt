@@ -796,12 +796,12 @@ class MainActivity : Activity() {
             openProfileImagePicker(PICK_PROFILE_AVATAR)
         }
         val fullNameField = field("Full Name")
-        val usernameField = field("Username")
+        val usernameField = field("Username (@username)")
         profileBox.addView(fullNameField, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
         profileBox.addView(usernameField, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
         addBoxButton(profileBox, "💾  Save Profile") {
-            val fullName = fullNameField.text.toString().trim()
-            val usernameValue = usernameField.text.toString().trim().removePrefix("@")
+            val fullName = fullNameField.text.toString().trim().removePrefix("@").trim()
+            val usernameValue = usernameField.text.toString().trim().removePrefix("@").trim()
             if (fullName.isBlank()) { fullNameField.error = "Full Name zaroori hai"; return@addBoxButton }
             if (usernameValue.isBlank() || !usernameValue.matches(Regex("[A-Za-z0-9_.]{3,30}"))) {
                 usernameField.error = "Username 3–30 characters, letters/numbers/._"
@@ -940,7 +940,7 @@ class MainActivity : Activity() {
                 profileAvatarPath = profile.avatarPath
                 profileCoverPath = profile.coverPath
                 displayName.text = profile.displayName.ifBlank { "Your Name" }
-                username.text = "@" + profile.username.removePrefix("@")
+                username.text = "@" + profile.username.trim().removePrefix("@")
                 if (profile.bio.isNotBlank()) {
                     profileBioText.text = profile.bio; profileBioText.visibility = View.VISIBLE
                 }
@@ -1176,8 +1176,11 @@ private fun openProfileImagePicker(requestCode: Int) {
                 item.mediaType.contains(query, true)
 
             val matchesCategory =
-                selectedCategory == "Home" ||
-                belongsToCategory(item, selectedCategory)
+                if (selectedCategory == "Home") {
+                    item.visibility == "public"
+                } else {
+                    item.visibility == "public" && belongsToCategory(item, selectedCategory)
+                }
 
             matchesSearch && matchesCategory
         }
@@ -1277,8 +1280,12 @@ private fun openProfileImagePicker(requestCode: Int) {
         item: MediaItem,
         category: String
     ): Boolean {
-        // Member image/video posts belong to the Home feed, never to admin-managed categories.
-        if (item.storagePath.startsWith("user-posts/")) return false
+        // User-created posts belong to Home/Profile only, never to admin-managed categories.
+        val isUserPost = item.createdBy.isNotBlank() &&
+            (item.storagePath.startsWith("user-posts/") ||
+             item.storagePath.startsWith("private-user-posts/") ||
+             item.externalUrl.isNotBlank())
+        if (isUserPost || item.visibility != "public") return false
         val type = item.mediaType.lowercase().replace('-', '_').replace(' ', '_')
         val title = item.title.lowercase()
         val description = item.description.lowercase()
@@ -1331,7 +1338,10 @@ private fun openProfileImagePicker(requestCode: Int) {
                 background = rounded(panel, emerald)
             }
 
-            val isMemberPost = item.createdBy.isNotBlank() && (item.storagePath.startsWith("user-posts/") || item.storagePath.startsWith("private-user-posts/") || item.externalUrl.isNotBlank())
+            val isMemberPost = item.createdBy.isNotBlank() &&
+                (item.storagePath.startsWith("user-posts/") ||
+                 item.storagePath.startsWith("private-user-posts/") ||
+                 item.externalUrl.isNotBlank())
             if (isMemberPost) {
                 val authorRow = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL

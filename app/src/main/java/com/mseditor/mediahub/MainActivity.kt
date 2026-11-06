@@ -861,7 +861,11 @@ class MainActivity : Activity() {
         val identityText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0) }
         val nameLine = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val displayName = text("Your Name", 18f, white, true)
-        val profileBrand = text("🏜️ MS Editor Hub Profile ⚙️", 11f, gold, true).apply { setPadding(dp(7), 0, 0, 0) }
+        val profileBrand = text("🌐 MS Editor Media Hub", 11f, gold, true).apply {
+            setPadding(dp(7), 0, 0, 0)
+            isClickable = true
+            setOnClickListener { openAdminWebsite("MS Editor Media Hub") }
+        }
         nameLine.addView(displayName, LinearLayout.LayoutParams(0, -2, 1f))
         nameLine.addView(profileBrand, LinearLayout.LayoutParams(-2, -2))
         val username = text("@username", 13f, Color.LTGRAY)

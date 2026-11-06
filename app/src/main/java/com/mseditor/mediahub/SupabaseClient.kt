@@ -530,12 +530,28 @@ object SupabaseClient {
     fun deleteUserPost(token: String, userId: String, item: MediaItem, callback: (Result<Unit>) -> Unit) {
         executor.execute {
             val result = runCatching {
-                require(token.isNotBlank() && userId.isNotBlank() && item.createdBy == userId)
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                require(item.id.isNotBlank() && item.createdBy == userId) { "Yeh post aapke account ki nahi hai." }
                 require(item.storagePath.startsWith("user-posts/$userId/")) { "Sirf apni user post delete kar sakte hain." }
+
+                // Remove only this user's object through the Storage API.
                 val storageBody = JSONObject().put("prefixes", JSONArray().put(item.storagePath)).toString()
                 profileRequest(token, "DELETE", "object/media", storageBody, storage = true)
+
+                // Return the deleted row so an RLS-filtered/no-op delete is never reported as success.
                 val id = URLEncoder.encode(item.id, "UTF-8")
-                profileRequest(token, "DELETE", "media_items?id=eq.$id&created_by=eq.$userId")
+                val encodedPath = URLEncoder.encode(item.storagePath, "UTF-8")
+                val deletedRows = JSONArray(
+                    profileRequest(
+                        token,
+                        "DELETE",
+                        "media_items?id=eq.$id&created_by=eq.$userId&storage_path=eq." + encodedPath,
+                        prefer = "return=representation"
+                    )
+                )
+                if (deletedRows.length() == 0) {
+                    throw Exception("Post database se delete nahi hui. Login dobara karein ya delete permission check karein.")
+                }
                 Unit
             }
             mainHandler.post { callback(result) }
@@ -788,7 +804,7 @@ object SupabaseClient {
         val following: Int = 0
     )
 
-    private fun profileRequest(token: String, method: String, path: String, body: String? = null, storage: Boolean = false, mime: String = "application/json"): String {
+    private fun profileRequest(token: String, method: String, path: String, body: String? = null, storage: Boolean = false, mime: String = "application/json", prefer: String? = null): String {
         val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
         val endpoint = if (storage) "$base/storage/v1/$path" else "$base/rest/v1/$path"
         val connection = URL(endpoint).openConnection() as HttpURLConnection
@@ -803,7 +819,8 @@ object SupabaseClient {
                 connection.setRequestProperty("Content-Type", "application/json")
                 connection.setRequestProperty("Accept-Profile", "public")
                 connection.setRequestProperty("Content-Profile", "public")
-                if (body != null) connection.setRequestProperty("Prefer", "resolution=merge-duplicates,return=minimal")
+                if (prefer != null) connection.setRequestProperty("Prefer", prefer)
+                else if (body != null) connection.setRequestProperty("Prefer", "resolution=merge-duplicates,return=minimal")
             } else if (body != null) {
                 connection.setRequestProperty("Content-Type", mime)
                 connection.setRequestProperty("x-upsert", "false")

@@ -800,7 +800,7 @@ class MainActivity : Activity() {
         profileBox.addView(fullNameField, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
         profileBox.addView(usernameField, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
         addBoxButton(profileBox, "💾  Save Profile") {
-            val fullName = fullNameField.text.toString().trim().removePrefix("@").trim()
+            val fullName = fullNameField.text.toString().trim().replace("@", "").trim()
             val usernameValue = usernameField.text.toString().trim().removePrefix("@").trim()
             if (fullName.isBlank()) { fullNameField.error = "Full Name zaroori hai"; return@addBoxButton }
             if (usernameValue.isBlank() || !usernameValue.matches(Regex("[A-Za-z0-9_.]{3,30}"))) {
@@ -925,8 +925,7 @@ class MainActivity : Activity() {
                 memberPosts = items.filter {
                     it.createdBy == profileUserId &&
                         (it.storagePath.startsWith("user-posts/") ||
-                         it.storagePath.startsWith("private-user-posts/") ||
-                         it.externalUrl.isNotBlank())
+                         it.storagePath.startsWith("private-user-posts/"))
                 }
                 (postsStat.getChildAt(0) as? TextView)?.text = memberPosts.size.toString()
                 renderProfilePosts()
@@ -939,7 +938,7 @@ class MainActivity : Activity() {
             result.onSuccess { profile ->
                 profileAvatarPath = profile.avatarPath
                 profileCoverPath = profile.coverPath
-                displayName.text = profile.displayName.ifBlank { "Your Name" }
+                displayName.text = profile.displayName.replace("@", "").ifBlank { "Your Name" }
                 username.text = "@" + profile.username.trim().removePrefix("@")
                 if (profile.bio.isNotBlank()) {
                     profileBioText.text = profile.bio; profileBioText.visibility = View.VISIBLE

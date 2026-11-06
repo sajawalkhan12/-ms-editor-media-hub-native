@@ -673,148 +673,156 @@ class MainActivity : Activity() {
 
 
 
-    private fun showUserUploadPostPage() {
+        private fun showUserUploadPostPage() {
         val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
         val token = prefs.getString("access_token", "").orEmpty()
         val userId = prefs.getString("user_id", "").orEmpty()
         profileAccessToken = token
         profileUserId = userId
         if (token.isBlank() || userId.isBlank()) {
-            startActivity(Intent(this, AuthActivity::class.java))
-            finish()
-            return
+            startActivity(Intent(this, AuthActivity::class.java)); finish(); return
         }
         selectedUserPostUri = null
         selectedUserPostType = ""
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(18), dp(18), dp(24))
+            setPadding(dp(16), dp(16), dp(16), dp(24))
             setBackgroundColor(black)
         }
         page.addView(actionButton("‹ Back to Profile") { showProfilePage() }, LinearLayout.LayoutParams(-1, dp(44)))
-        page.addView(text("UPLOAD POST", 24f, emerald, true).apply { setPadding(0, dp(20), 0, dp(5)) })
-        page.addView(text("Share an image or video on your profile", 13f, gold).apply { setPadding(0, 0, 0, dp(18)) })
+        page.addView(text("UPLOAD POST", 24f, emerald, true).apply { setPadding(0, dp(16), 0, dp(4)) })
+        page.addView(text("Apni post aur profile details yahan save karein.", 13f, gold).apply { setPadding(0, 0, 0, dp(12)) })
 
-        val profileCoverPreview = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            setBackgroundColor(panel)
-            contentDescription = "Profile cover image preview"
-        }
-        page.addView(profileCoverPreview, LinearLayout.LayoutParams(-1, dp(110)).apply { topMargin = dp(8) })
-        loadProfileImage(profileCoverPreview, profileCoverPath)
-        page.addView(actionButton("Cover Image") {
-            returnToUploadPostAfterImageEdit = true
-            openProfileImagePicker(PICK_PROFILE_COVER)
-        }, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8) })
-        page.addView(actionButton("Edit Profile Photo") {
-            returnToUploadPostAfterImageEdit = true
-            openProfileImagePicker(PICK_PROFILE_AVATAR)
-        }, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8) })
-
-        val bioField = EditText(this).apply {
-            hint = "Apne bare mein likhein..."
-            setText(profileBioField?.text?.toString().orEmpty())
-            minLines = 2; maxLines = 4; gravity = Gravity.TOP
-            setTextColor(white); setHintTextColor(Color.LTGRAY)
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = rounded(panel, emerald)
-        }
-        profileBioField = bioField
-        page.addView(text("Bio", 13f, gold, true).apply { setPadding(0, dp(12), 0, dp(4)) })
-        page.addView(bioField, LinearLayout.LayoutParams(-1, -2))
-        val locationField = EditText(this).apply {
-            hint = "City, Country"
-            setSingleLine(true)
-            setText(profileLocationField?.text?.toString().orEmpty())
-            setTextColor(white); setHintTextColor(Color.LTGRAY)
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = rounded(panel, emerald)
-        }
-        profileLocationField = locationField
-        page.addView(text("Location (optional)", 13f, gold, true).apply { setPadding(0, dp(10), 0, dp(4)) })
-        page.addView(locationField, LinearLayout.LayoutParams(-1, dp(44)))
-        page.addView(actionButton("SAVE PROFILE") {
-            SupabaseClient.saveUserProfile(
-                profileAccessToken, profileUserId, bioField.text.toString().trim(),
-                locationField.text.toString().trim(), profileAvatarPath, profileCoverPath
-            ) { saved ->
-                if (isFinishing || isDestroyed) return@saveUserProfile
-                saved.onSuccess {
-                    Toast.makeText(this, "Profile save ho gaya.", Toast.LENGTH_LONG).show()
-                    showProfilePage()
-                }.onFailure { e ->
-                    Toast.makeText(this, "Profile save nahi hua: " + e.message, Toast.LENGTH_LONG).show()
-                }
+        fun formBox(title: String): LinearLayout {
+            val box = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(14), dp(14), dp(14), dp(16))
+                background = rounded(panel, gold)
             }
-        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(10) })
+            box.addView(text(title, 17f, gold, true).apply { setPadding(0, 0, 0, dp(12)) })
+            page.addView(box, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+            return box
+        }
+        fun field(hintText: String, multiline: Boolean = false): EditText =
+            EditText(this).apply {
+                hint = hintText
+                if (multiline) { minLines = 3; gravity = Gravity.TOP } else setSingleLine(true)
+                setTextColor(white); setHintTextColor(Color.LTGRAY)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = rounded(black, emerald)
+            }
+        fun addBoxButton(box: LinearLayout, label: String, action: () -> Unit) {
+            box.addView(actionButton(label, action), LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8) })
+        }
 
-        val titleField = EditText(this).apply {
-            hint = "Post title"
-            setSingleLine(true)
-            setTextColor(white); setHintTextColor(Color.LTGRAY)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = rounded(panel, emerald)
+        val postBox = formBox("BOX 1 — POST UPLOAD")
+        val titleField = field("Name / Title")
+        val descriptionField = field("Description", true)
+        val linkField = field("All Media Video Link Paste")
+        val selectedLabel = text("Gallery se abhi koi media select nahi hua.", 12f, Color.LTGRAY)
+        val status = text("Post ki type aur privacy select karein.", 12f, gold)
+        var selectedVisibility = "public"
+        val visibilityGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        val publicChoice = RadioButton(this).apply { id = View.generateViewId(); text = "Public Post"; setTextColor(white); isChecked = true }
+        val privateChoice = RadioButton(this).apply { id = View.generateViewId(); text = "Private Post"; setTextColor(white) }
+        visibilityGroup.addView(publicChoice); visibilityGroup.addView(privateChoice)
+        visibilityGroup.setOnCheckedChangeListener { _, checkedId ->
+            selectedVisibility = if (checkedId == privateChoice.id) "private" else "public"
         }
-        val descriptionField = EditText(this).apply {
-            hint = "Description (optional)"
-            minLines = 3; gravity = Gravity.TOP
-            setTextColor(white); setHintTextColor(Color.LTGRAY)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = rounded(panel, emerald)
-        }
-        val selectedLabel = text("No image or video selected", 13f, Color.LTGRAY)
-        userPostSelectedLabel = selectedLabel
-        val status = text("Choose an image or video to upload.", 13f, gold)
-        page.addView(titleField, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
-        page.addView(descriptionField, LinearLayout.LayoutParams(-1, dp(100)).apply { topMargin = dp(10) })
-        page.addView(actionButton("Upload Image") {
-            selectedUserPostType = "image"
-            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE); type = "image/*"
-            }, PICK_USER_POST_FILE)
-        }, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(16) })
-        page.addView(actionButton("Upload Video") {
+        postBox.addView(visibilityGroup)
+        addBoxButton(postBox, "🎬  Video Upload") {
             selectedUserPostType = "video"
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE); type = "video/*"
             }, PICK_USER_POST_FILE)
-        }, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
-        page.addView(selectedLabel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-        page.addView(actionButton("PUBLISH POST") {
-            val uri = selectedUserPostUri
-            if (uri == null) {
-                status.text = "Pehle image ya video select karein."
-                return@actionButton
-            }
+        }
+        addBoxButton(postBox, "🖼  Image Upload") {
+            selectedUserPostType = "image"
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "image/*"
+            }, PICK_USER_POST_FILE)
+        }
+        postBox.addView(selectedLabel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        postBox.addView(linkField, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
+        postBox.addView(descriptionField, LinearLayout.LayoutParams(-1, dp(94)).apply { topMargin = dp(10) })
+        postBox.addView(titleField, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
+        addBoxButton(postBox, "💾  Post Save") {
             val title = titleField.text.toString().trim()
-            if (title.isBlank()) {
-                titleField.error = "Post title zaroori hai"
-                return@actionButton
+            if (title.isBlank()) { titleField.error = "Name / Title zaroori hai"; return@addBoxButton }
+            val link = linkField.text.toString().trim()
+            val uri = selectedUserPostUri
+            if (uri == null && link.isBlank()) {
+                status.text = "Video/Image upload karein ya media link paste karein."
+                return@addBoxButton
             }
-            status.text = "Post upload ho rahi hai..."
-            SupabaseClient.uploadUserPost(this, token, userId, uri, selectedUserPostType,
-                title, descriptionField.text.toString().trim()) { result ->
-                if (isFinishing || isDestroyed) return@uploadUserPost
-                result.onSuccess {
-                    Toast.makeText(this, "Post publish ho gayi.", Toast.LENGTH_LONG).show()
-                    selectedUserPostUri = null
-                    showProfilePage()
-                }.onFailure { error ->
-                    status.text = "Upload failed: ${error.message}"
-                    Toast.makeText(this, "Post upload nahi hui: ${error.message}", Toast.LENGTH_LONG).show()
+            status.text = "Post save ho rahi hai..."
+            val done: (Result<Unit>) -> Unit = { result ->
+                if (!isFinishing && !isDestroyed) {
+                    result.onSuccess {
+                        Toast.makeText(this, "Post save ho gayi.", Toast.LENGTH_LONG).show()
+                        selectedUserPostUri = null
+                        showProfilePage()
+                    }.onFailure { error ->
+                        status.text = "Post save nahi hui: ${error.message}"
+                        Toast.makeText(this, "Post save nahi hui: ${error.message}", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
-        }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(18) })
-        page.addView(status, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+            if (uri != null) {
+                SupabaseClient.uploadUserPost(this, token, userId, uri, selectedUserPostType,
+                    title, descriptionField.text.toString().trim(), selectedVisibility, done)
+            } else {
+                SupabaseClient.uploadUserPostLink(token, userId, link, title,
+                    descriptionField.text.toString().trim(), selectedVisibility, done)
+            }
+        }
+        postBox.addView(status, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+
+        val profileBox = formBox("BOX 2 — PROFILE SETTINGS")
+        val coverPreview = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(black)
+            contentDescription = "Cover image preview"
+        }
+        profileBox.addView(coverPreview, LinearLayout.LayoutParams(-1, dp(100)))
+        addBoxButton(profileBox, "Cover Image — Gallery se") {
+            returnToUploadPostAfterImageEdit = true
+            openProfileImagePicker(PICK_PROFILE_COVER)
+        }
+        addBoxButton(profileBox, "Profile Image — Gallery se") {
+            returnToUploadPostAfterImageEdit = true
+            openProfileImagePicker(PICK_PROFILE_AVATAR)
+        }
+        val fullNameField = field("Full Name")
+        val usernameField = field("Username")
+        profileBox.addView(fullNameField, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
+        profileBox.addView(usernameField, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
+        addBoxButton(profileBox, "💾  Save Profile") {
+            val fullName = fullNameField.text.toString().trim()
+            val usernameValue = usernameField.text.toString().trim().removePrefix("@")
+            if (fullName.isBlank()) { fullNameField.error = "Full Name zaroori hai"; return@addBoxButton }
+            if (usernameValue.isBlank() || !usernameValue.matches(Regex("[A-Za-z0-9_.]{3,30}"))) {
+                usernameField.error = "Username 3–30 characters, letters/numbers/._"
+                return@addBoxButton
+            }
+            SupabaseClient.saveUserIdentity(token, userId, fullName, usernameValue) { result ->
+                if (isFinishing || isDestroyed) return@saveUserIdentity
+                result.onSuccess {
+                    Toast.makeText(this, "Profile save ho gaya.", Toast.LENGTH_LONG).show()
+                    showProfilePage()
+                }.onFailure { error ->
+                    Toast.makeText(this, "Profile save nahi hua: ${error.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
         setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
         SupabaseClient.getUserProfile(token, userId) { result ->
             if (isFinishing || isDestroyed) return@getUserProfile
             result.onSuccess { profile ->
                 profileAvatarPath = profile.avatarPath
                 profileCoverPath = profile.coverPath
-                bioField.setText(profile.bio)
-                locationField.setText(profile.location)
-                loadProfileImage(profileCoverPreview, profileCoverPath)
+                fullNameField.setText(profile.displayName)
+                usernameField.setText(profile.username)
+                loadProfileImage(coverPreview, profileCoverPath)
             }
         }
     }
@@ -840,7 +848,6 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(dp(42), dp(42)))
         page.addView(toolbar)
 
-        // Keep the cover and profile identity. Original member posts use the same renderer as Home.
         val coverFrame = FrameLayout(this).apply { background = rounded(panel, gold); clipToOutline = true }
         val coverView = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(panel); contentDescription = "Profile cover image"
@@ -859,18 +866,15 @@ class MainActivity : Activity() {
         }
         identity.addView(avatar, LinearLayout.LayoutParams(dp(82), dp(82)))
         val identityText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0) }
-        val nameLine = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val displayName = text("Your Name", 18f, white, true)
-        nameLine.addView(displayName, LinearLayout.LayoutParams(-1, -2))
         val username = text("@username", 13f, Color.LTGRAY)
-        identityText.addView(nameLine); identityText.addView(username)
+        identityText.addView(displayName); identityText.addView(username)
         identity.addView(identityText, LinearLayout.LayoutParams(0, -2, 1f)); page.addView(identity)
 
         val profileBioText = text("", 13f, Color.LTGRAY).apply { setPadding(dp(8), dp(4), dp(8), dp(2)); visibility = View.GONE }
         val profileLocationText = text("", 12f, Color.LTGRAY).apply { setPadding(dp(8), dp(2), dp(8), dp(8)); visibility = View.GONE }
         page.addView(profileBioText); page.addView(profileLocationText)
 
-        val ownPosts = allMediaItems.filter { it.createdBy == profileUserId && it.storagePath.startsWith("user-posts/") }
         val stats = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
             setPadding(dp(4), dp(12), dp(4), dp(12)); background = rounded(panel)
@@ -880,54 +884,75 @@ class MainActivity : Activity() {
             addView(text(value, 19f, white, true).apply { gravity = Gravity.CENTER })
             addView(text(label, 12f, Color.LTGRAY).apply { gravity = Gravity.CENTER })
         }
-        val postsStat = stat(ownPosts.size.toString(), "Posts")
+        val postsStat = stat("0", "Posts")
         val followersStat = stat("0", "Followers"); val followingStat = stat("0", "Following")
         stats.addView(postsStat, LinearLayout.LayoutParams(0, -2, 1f))
         stats.addView(followersStat, LinearLayout.LayoutParams(0, -2, 1f))
         stats.addView(followingStat, LinearLayout.LayoutParams(0, -2, 1f))
         page.addView(stats)
-        page.addView(actionButton("＋  Upload Post") { showUserUploadPostPage() }, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(12) })
-        page.addView(text("Original Posts", 17f, gold, true).apply { setPadding(dp(4), dp(18), 0, dp(8)) })
-        page.addView(actionButton("▦  Original Post") {
-            showMediaItems(allMediaItems.filter { it.createdBy == profileUserId && it.storagePath.startsWith("user-posts/") })
-        }, LinearLayout.LayoutParams(-1, dp(42)).apply { bottomMargin = dp(8) })
 
         postsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        var memberPosts = emptyList<MediaItem>()
+        var currentPostFilter = "new"
+        fun renderProfilePosts() {
+            val visible = when (currentPostFilter) {
+                "old" -> memberPosts.filter { it.visibility == "public" }.sortedBy { it.createdAt }
+                "private" -> memberPosts.filter { it.visibility == "private" }.sortedByDescending { it.createdAt }
+                else -> memberPosts.filter { it.visibility == "public" }.sortedByDescending { it.createdAt }
+            }
+            showMediaItems(visible)
+        }
+        fun profileOption(label: String, filter: String) {
+            page.addView(actionButton(label) {
+                currentPostFilter = filter
+                renderProfilePosts()
+            }, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(7) })
+        }
+        profileOption("＋  New Post", "new")
+        profileOption("▦  Old Post", "old")
+        profileOption("🔒  Private Post", "private")
+        page.addView(actionButton("⬆  Upload Post mein jao") { showUserUploadPostPage() },
+            LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(7) })
         page.addView(postsContainer, LinearLayout.LayoutParams(-1, -2))
-        val scroll = ScrollView(this).apply { isFillViewport = true; setBackgroundColor(black); addView(page) }
-        setContentView(scroll)
-        showMediaItems(ownPosts)
 
-        SupabaseClient.getMediaItems { mediaResult ->
+        setContentView(ScrollView(this).apply { isFillViewport = true; setBackgroundColor(black); addView(page) })
+        SupabaseClient.getMediaItems(profileAccessToken) { mediaResult ->
             if (!isFinishing && !isDestroyed) mediaResult.onSuccess { items ->
                 allMediaItems = items
-                if (isProfileVisible) {
-                    val mine = items.filter { it.createdBy == profileUserId && it.storagePath.startsWith("user-posts/") }
-                    showMediaItems(mine)
-                    (postsStat.getChildAt(0) as? TextView)?.text = mine.size.toString()
+                memberPosts = items.filter {
+                    it.createdBy == profileUserId &&
+                        (it.storagePath.startsWith("user-posts/") ||
+                         it.storagePath.startsWith("private-user-posts/") ||
+                         it.externalUrl.isNotBlank())
                 }
+                (postsStat.getChildAt(0) as? TextView)?.text = memberPosts.size.toString()
+                renderProfilePosts()
+            }.onFailure { error ->
+                Toast.makeText(this, "Profile posts load nahi huin: ${error.message}", Toast.LENGTH_LONG).show()
             }
         }
         SupabaseClient.getUserProfile(profileAccessToken, profileUserId) { result ->
             if (isFinishing || isDestroyed) return@getUserProfile
             result.onSuccess { profile ->
-                profileAvatarPath = profile.avatarPath; profileCoverPath = profile.coverPath
-                val cleanUsername = profile.username.trim().removePrefix("@").trim()
-                val cleanDisplayName = profile.displayName.trim().removePrefix("@").trim()
-                displayName.text = cleanDisplayName
-                displayName.visibility = if (cleanDisplayName.isBlank() || cleanDisplayName.equals(cleanUsername, ignoreCase = true)) View.GONE else View.VISIBLE
-                username.text = if (cleanUsername.isBlank()) "@username" else "@$cleanUsername"
-                profileBioText.text = profile.bio; profileBioText.visibility = if (profile.bio.isBlank()) View.GONE else View.VISIBLE
-                profileLocationText.text = if (profile.location.isBlank()) "" else "📍 ${profile.location}"
-                profileLocationText.visibility = if (profile.location.isBlank()) View.GONE else View.VISIBLE
-                followersStat.getChildAt(0).let { (it as? TextView)?.text = profile.followers.toString() }
-                followingStat.getChildAt(0).let { (it as? TextView)?.text = profile.following.toString() }
-                loadProfileImage(avatar, profileAvatarPath); loadProfileImage(coverView, profileCoverPath)
-            }.onFailure { e -> Toast.makeText(this, "Profile load nahi hua: ${e.message}", Toast.LENGTH_LONG).show() }
+                profileAvatarPath = profile.avatarPath
+                profileCoverPath = profile.coverPath
+                displayName.text = profile.displayName.ifBlank { "Your Name" }
+                username.text = "@" + profile.username.removePrefix("@")
+                if (profile.bio.isNotBlank()) {
+                    profileBioText.text = profile.bio; profileBioText.visibility = View.VISIBLE
+                }
+                if (profile.location.isNotBlank()) {
+                    profileLocationText.text = "📍 " + profile.location; profileLocationText.visibility = View.VISIBLE
+                }
+                loadProfileImage(avatar, profileAvatarPath)
+                loadProfileImage(coverView, profileCoverPath)
+                (followersStat.getChildAt(0) as? TextView)?.text = profile.followers.toString()
+                (followingStat.getChildAt(0) as? TextView)?.text = profile.following.toString()
+            }
         }
     }
 
-    private fun openProfileImagePicker(requestCode: Int) {
+private fun openProfileImagePicker(requestCode: Int) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "image/*"
@@ -1112,7 +1137,8 @@ class MainActivity : Activity() {
         postsContainer.removeAllViews()
         postsContainer.addView(text("Loading posts...", 14f, Color.LTGRAY))
 
-        SupabaseClient.getMediaItems { result ->
+        val sessionToken = if (isProfileVisible) getSharedPreferences("auth_session", MODE_PRIVATE).getString("access_token", null) else null
+        SupabaseClient.getMediaItems(sessionToken) { result ->
             if (isFinishing || isDestroyed) return@getMediaItems
 
             refreshButton.isEnabled = true
@@ -1306,7 +1332,7 @@ class MainActivity : Activity() {
                 background = rounded(panel, emerald)
             }
 
-            val isMemberPost = item.storagePath.startsWith("user-posts/")
+            val isMemberPost = item.storagePath.startsWith("user-posts/") || item.storagePath.startsWith("private-user-posts/") || item.externalUrl.isNotBlank()
             if (isMemberPost) {
                 val authorRow = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -1394,11 +1420,33 @@ class MainActivity : Activity() {
 
             card.addView(text("Type: ${item.mediaType}", 12f, emerald))
 
-            val url = mediaUrl(
-                item.externalUrl.ifBlank { item.storagePath }
-            )
+            val isPrivateStoredMedia = item.visibility == "private" && item.storagePath.startsWith("private-user-posts/")
+            val url = if (isPrivateStoredMedia) "" else mediaUrl(item.externalUrl.ifBlank { item.storagePath })
             val poster = mediaUrl(item.posterPath)
             val youtubeId = youtubeVideoId(item.externalUrl.ifBlank { url })
+            if (item.visibility == "private") {
+                card.addView(text("🔒 PRIVATE POST — Sirf aap dekh sakte hain", 12f, gold, true)
+                    .apply { setPadding(0, dp(6), 0, dp(6)) })
+            }
+            if (isPrivateStoredMedia) {
+                card.addView(actionButton("🔒 View Private Media") {
+                    val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
+                    val token = prefs.getString("access_token", "").orEmpty()
+                    SupabaseClient.getSignedPrivateMediaUrl(item.storagePath, token) { signed ->
+                        if (isFinishing || isDestroyed) return@getSignedPrivateMediaUrl
+                        signed.onSuccess { signedUrl ->
+                            when (mediaKind(item)) {
+                                "video" -> addVideoThumbnail(card, "", signedUrl, "")
+                                "audio" -> addNativeMediaPlayer(card, signedUrl, false)
+                                "image" -> addImage(card, signedUrl, 16f / 9f)
+                                else -> addImage(card, signedUrl, 16f / 9f)
+                            }
+                        }.onFailure { error ->
+                            Toast.makeText(this, "Private media open nahi hui: ${error.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8) })
+            } else
 
             if (isImagePrompt(item)) {
                 // Prompt posts use their poster as the visible preview; source media may be absent.

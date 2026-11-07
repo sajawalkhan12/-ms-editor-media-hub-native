@@ -408,6 +408,7 @@ object SupabaseClient {
         title: String,
         description: String,
         mediaType: String,
+        promptText: String,
         callback: (Result<Unit>) -> Unit
     ) {
         executor.execute {
@@ -455,6 +456,7 @@ object SupabaseClient {
                     .put("title", title)
                     .put("description", description)
                     .put("media_type", mediaType)
+                    .put("prompt_text", promptText.ifBlank { null })
                     .put("storage_path", mediaPath)
                     .put("external_url", "")
                     .put("poster_path", posterPath)

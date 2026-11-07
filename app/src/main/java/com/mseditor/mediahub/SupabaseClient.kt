@@ -59,11 +59,8 @@ object SupabaseClient {
                     connection.useCaches = false
 
                     connection.setRequestProperty("apikey", apiKey)
-                    connection.setRequestProperty(
-                        "Authorization",
-                        "Bearer $apiKey"
-                    )
-                    connection.setRequestProperty(
+                    // Publishable keys are API keys, not user JWTs; use apikey header only.
+connection.setRequestProperty(
                         "Accept",
                         "application/json"
                     )
@@ -116,8 +113,8 @@ object SupabaseClient {
             connection.connectTimeout = 20000
             connection.readTimeout = 20000
             connection.setRequestProperty("apikey", key)
-            connection.setRequestProperty("Authorization", "Bearer $key")
-            connection.setRequestProperty("Accept", "application/json")
+            // Publishable keys are API keys, not user JWTs; use apikey header only.
+connection.setRequestProperty("Accept", "application/json")
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Accept-Profile", "public")
             connection.setRequestProperty("Content-Profile", "public")

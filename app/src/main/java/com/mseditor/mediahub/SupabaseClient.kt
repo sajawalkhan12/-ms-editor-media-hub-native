@@ -20,7 +20,11 @@ data class MediaItem(
     val externalUrl: String,
     val posterPath: String,
     val createdBy: String,
-    val createdAt: String
+    val createdAt: String,
+    val profileUsername: String = "",
+    val profileDisplayName: String = "",
+    val profileAvatarPath: String = "",
+    val visibility: String = "public"
 )
 
 object SupabaseClient {
@@ -29,6 +33,7 @@ object SupabaseClient {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     fun getMediaItems(
+        token: String? = null,
         callback: (Result<List<MediaItem>>) -> Unit
     ) {
         executor.execute {
@@ -59,8 +64,11 @@ object SupabaseClient {
                     connection.useCaches = false
 
                     connection.setRequestProperty("apikey", apiKey)
-                    // Publishable keys are API keys, not user JWTs; use apikey header only.
-connection.setRequestProperty(
+                    // Publishable API keys are not user JWTs. Send Authorization only for a real signed-in user token.
+                    token?.takeIf { it.isNotBlank() }?.let {
+                        connection.setRequestProperty("Authorization", "Bearer $it")
+                    }
+                    connection.setRequestProperty(
                         "Accept",
                         "application/json"
                     )
@@ -87,7 +95,25 @@ connection.setRequestProperty(
                         )
                     }
 
-                    parseMediaItems(response)
+                    val parsed = parseMediaItems(response)
+                    val ownerIds = parsed.map { it.createdBy }.filter { it.isNotBlank() }.distinct()
+                    if (ownerIds.isEmpty()) parsed else {
+                        val ids = ownerIds.joinToString(",")
+                        val profileRows = JSONArray(restRequest("GET", "profiles?select=id,username,display_name,avatar_path&id=in.($ids)"))
+                        val profileMap = mutableMapOf<String, JSONObject>()
+                        for (index in 0 until profileRows.length()) {
+                            val row = profileRows.getJSONObject(index)
+                            profileMap[cleanJsonString(row, "id")] = row
+                        }
+                        parsed.map { item ->
+                            val profile = profileMap[item.createdBy]
+                            if (profile == null) item else item.copy(
+                                profileUsername = cleanJsonString(profile, "username"),
+                                profileDisplayName = cleanJsonString(profile, "display_name"),
+                                profileAvatarPath = cleanJsonString(profile, "avatar_path")
+                            )
+                        }
+                    }
 
                 } finally {
                     connection.disconnect()
@@ -113,8 +139,7 @@ connection.setRequestProperty(
             connection.connectTimeout = 20000
             connection.readTimeout = 20000
             connection.setRequestProperty("apikey", key)
-            // Publishable keys are API keys, not user JWTs; use apikey header only.
-connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("Accept", "application/json")
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Accept-Profile", "public")
             connection.setRequestProperty("Content-Profile", "public")
@@ -292,7 +317,8 @@ connection.setRequestProperty("Accept", "application/json")
                     externalUrl = cleanJsonString(item, "external_url"),
                     posterPath = cleanJsonString(item, "poster_path"),
                     createdBy = cleanJsonString(item, "created_by"),
-                    createdAt = cleanJsonString(item, "created_at")
+                    createdAt = cleanJsonString(item, "created_at"),
+                    visibility = cleanJsonString(item, "visibility").ifBlank { "public" }
                 )
             )
         }
@@ -386,7 +412,7 @@ connection.setRequestProperty("Accept", "application/json")
     ) {
         executor.execute {
             val result = runCatching {
-                require(mediaType in listOf("movie", "trailer", "image", "audio")) { "Category valid nahi hai." }
+                require(mediaType in listOf("video_songs", "video_tutorial", "video_prompt", "image_prompt", "presets_assets")) { "Category valid nahi hai." }
                 val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
                 val key = SupabaseConfig.SUPABASE_KEY.trim()
                 fun uploadObject(uri: android.net.Uri, folder: String): String {
@@ -457,6 +483,332 @@ connection.setRequestProperty("Accept", "application/json")
         }
     }
 
+
+
+    fun isFollowing(token: String, followerId: String, followingId: String, callback: (Boolean) -> Unit) {
+        executor.execute {
+            val following = runCatching {
+                val follower = URLEncoder.encode(followerId, "UTF-8")
+                val target = URLEncoder.encode(followingId, "UTF-8")
+                JSONArray(profileRequest(token, "GET", "user_follows?select=following_id&follower_id=eq.$follower&following_id=eq.$target")).length() > 0
+            }.getOrDefault(false)
+            mainHandler.post { callback(following) }
+        }
+    }
+
+    fun toggleFollow(token: String, followerId: String, followingId: String, currentlyFollowing: Boolean, callback: (Result<Boolean>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && followerId.isNotBlank() && followingId.isNotBlank())
+                require(followerId != followingId) { "Apne aap ko follow nahi kar sakte." }
+                val follower = URLEncoder.encode(followerId, "UTF-8")
+                val target = URLEncoder.encode(followingId, "UTF-8")
+                if (currentlyFollowing) {
+                    profileRequest(token, "DELETE", "user_follows?follower_id=eq.$follower&following_id=eq.$target")
+                    false
+                } else {
+                    val body = JSONObject().put("follower_id", followerId).put("following_id", followingId).toString()
+                    profileRequest(token, "POST", "user_follows", body)
+                    true
+                }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun updateUserPost(token: String, userId: String, itemId: String, title: String, description: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank() && itemId.isNotBlank())
+                val id = URLEncoder.encode(itemId, "UTF-8")
+                val body = JSONObject().put("title", title.take(160)).put("description", description.take(2000)).toString()
+                profileRequest(token, "PATCH", "media_items?id=eq.$id&created_by=eq.$userId", body)
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun deleteUserPost(token: String, userId: String, item: MediaItem, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                require(item.id.isNotBlank() && item.createdBy == userId) { "Yeh post aapke account ki nahi hai." }
+                val storedPath = item.storagePath
+                if (storedPath.startsWith("user-posts/$userId/")) {
+                    val storageBody = JSONObject().put("prefixes", JSONArray().put(storedPath)).toString()
+                    profileRequest(token, "DELETE", "object/media", storageBody, storage = true)
+                } else if (storedPath.startsWith("private-user-posts/$userId/")) {
+                    val privateObjectPath = storedPath.removePrefix("private-user-posts/")
+                    val storageBody = JSONObject().put("prefixes", JSONArray().put(privateObjectPath)).toString()
+                    profileRequest(token, "DELETE", "object/private-user-posts", storageBody, storage = true)
+                } else {
+                    require(storedPath.isBlank() && item.externalUrl.isNotBlank()) {
+                        "Sirf apni user post delete kar sakte hain."
+                    }
+                }
+                val id = URLEncoder.encode(item.id, "UTF-8")
+                val deletedRows = JSONArray(
+                    profileRequest(token, "DELETE", "media_items?id=eq.$id&created_by=eq.$userId", prefer = "return=representation")
+                )
+                if (deletedRows.length() == 0) {
+                    throw Exception("Post database se delete nahi hui. Login dobara karein ya delete permission check karein.")
+                }
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun uploadUserPost(
+        context: android.content.Context,
+        token: String,
+        userId: String,
+        mediaUri: android.net.Uri,
+        mediaKind: String,
+        title: String,
+        description: String,
+        visibility: String = "public",
+        callback: (Result<Unit>) -> Unit
+    ) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                require(mediaKind == "image" || mediaKind == "video") { "Image ya video select karein." }
+                require(visibility == "public" || visibility == "private") { "Post privacy select karein." }
+                val resolver = context.contentResolver
+                val mime = resolver.getType(mediaUri) ?: "application/octet-stream"
+                require(if (mediaKind == "image") mime.startsWith("image/") else mime.startsWith("video/")) {
+                    "Selected file ka type sahi nahi hai."
+                }
+                val displayName = try {
+                    resolver.query(mediaUri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                        if (it.moveToFirst()) it.getString(0) else null
+                    }
+                } catch (_: Exception) { null } ?: if (mediaKind == "image") "image" else "video"
+                val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                val privatePost = visibility == "private"
+                val bucket = if (privatePost) "private-user-posts" else "media"
+                val objectPath = if (privatePost) "$userId/${java.util.UUID.randomUUID()}_$safeName"
+                    else "user-posts/$userId/${java.util.UUID.randomUUID()}_$safeName"
+                val storedPath = if (privatePost) "private-user-posts/$objectPath" else objectPath
+                val encoded = objectPath.split("/").joinToString("/") {
+                    URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                }
+                val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                val upload = URL("$base/storage/v1/object/$bucket/$encoded").openConnection() as HttpURLConnection
+                try {
+                    upload.requestMethod = "POST"
+                    upload.connectTimeout = 30000
+                    upload.readTimeout = 180000
+                    upload.doOutput = true
+                    upload.setChunkedStreamingMode(64 * 1024)
+                    upload.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    upload.setRequestProperty("Authorization", "Bearer $token")
+                    upload.setRequestProperty("Content-Type", mime)
+                    upload.setRequestProperty("x-upsert", "false")
+                    resolver.openInputStream(mediaUri)?.use { input ->
+                        upload.outputStream.use { output -> input.copyTo(output, 64 * 1024) }
+                    } ?: throw Exception("Selected file read nahi ho saki.")
+                    val uploadCode = upload.responseCode
+                    val uploadResponse = (if (uploadCode in 200..299) upload.inputStream else upload.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (uploadCode !in 200..299) throw Exception("Storage HTTP $uploadCode: $uploadResponse")
+                } finally { upload.disconnect() }
+
+                val body = JSONObject()
+                    .put("title", title.take(160))
+                    .put("description", description.take(2000))
+                    .put("media_type", if (mediaKind == "image") "image" else "movie")
+                    .put("storage_path", storedPath)
+                    .put("external_url", "")
+                    .put("poster_path", "")
+                    .put("created_by", userId)
+                    .put("visibility", visibility)
+                    .toString()
+                val insert = URL("$base/rest/v1/media_items").openConnection() as HttpURLConnection
+                try {
+                    insert.requestMethod = "POST"
+                    insert.connectTimeout = 30000
+                    insert.readTimeout = 30000
+                    insert.doOutput = true
+                    insert.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    insert.setRequestProperty("Authorization", "Bearer $token")
+                    insert.setRequestProperty("Content-Type", "application/json")
+                    insert.setRequestProperty("Content-Profile", "public")
+                    insert.setRequestProperty("Prefer", "return=minimal")
+                    insert.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                    val code = insert.responseCode
+                    val response = (if (code in 200..299) insert.inputStream else insert.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Post record HTTP $code: $response")
+                } finally { insert.disconnect() }
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun uploadUserPostLink(
+        token: String,
+        userId: String,
+        mediaUrl: String,
+        title: String,
+        description: String,
+        visibility: String,
+        callback: (Result<Unit>) -> Unit
+    ) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                val cleanUrl = mediaUrl.trim()
+                require(cleanUrl.startsWith("https://") || cleanUrl.startsWith("http://")) {
+                    "Sahi http/https media link paste karein."
+                }
+                require(visibility == "public" || visibility == "private") { "Post privacy select karein." }
+                val body = JSONObject()
+                    .put("title", title.take(160))
+                    .put("description", description.take(2000))
+                    .put("media_type", "movie")
+                    .put("storage_path", "")
+                    .put("external_url", cleanUrl)
+                    .put("poster_path", "")
+                    .put("created_by", userId)
+                    .put("visibility", visibility)
+                    .toString()
+                profileRequest(token, "POST", "media_items", body)
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    private const val APPEARANCE_SETTINGS_PATH = "appearance/site-settings.json"
+
+    private fun publicAppearanceUrl(path: String): String {
+        val encoded = path.split("/").joinToString("/") {
+            URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+        }
+        return SupabaseConfig.SUPABASE_URL.trimEnd('/') +
+            "/storage/v1/object/public/media/" + encoded
+    }
+
+    fun getAppLogo(callback: (Result<String>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val url = URL(publicAppearanceUrl(APPEARANCE_SETTINGS_PATH) + "?v=" + System.currentTimeMillis())
+                val connection = url.openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "GET"
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.useCaches = false
+                    connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    val code = connection.responseCode
+                    if (code == 404) return@runCatching ""
+                    if (code !in 200..299) throw Exception("Appearance settings HTTP $code")
+                    val raw = connection.inputStream.bufferedReader().use { it.readText() }
+                    JSONObject(raw).optString("logo", "")
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun updateAppLogo(
+        context: android.content.Context,
+        session: AdminSession,
+        imageUri: android.net.Uri,
+        callback: (Result<String>) -> Unit
+    ) {
+        executor.execute {
+            val result = runCatching {
+                require(session.accessToken.isNotBlank()) { "Admin session expire ho gayi. Dobara login karein." }
+                val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                val key = SupabaseConfig.SUPABASE_KEY.trim()
+                val settingsUrl = URL(publicAppearanceUrl(APPEARANCE_SETTINGS_PATH) + "?v=" + System.currentTimeMillis())
+                val settingsConnection = settingsUrl.openConnection() as HttpURLConnection
+                val settings = try {
+                    settingsConnection.requestMethod = "GET"
+                    settingsConnection.connectTimeout = 15000
+                    settingsConnection.readTimeout = 20000
+                    settingsConnection.setRequestProperty("apikey", key)
+                    val code = settingsConnection.responseCode
+                    when {
+                        code in 200..299 -> JSONObject(settingsConnection.inputStream.bufferedReader().use { it.readText() })
+                        code == 404 -> JSONObject()
+                        else -> throw Exception("Existing appearance settings HTTP $code")
+                    }
+                } finally {
+                    settingsConnection.disconnect()
+                }
+
+                val resolver = context.contentResolver
+                val mime = resolver.getType(imageUri) ?: "image/png"
+                require(mime.startsWith("image/")) { "Sirf image file select karein." }
+                val displayName = try {
+                    resolver.query(imageUri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                        if (it.moveToFirst()) it.getString(0) else null
+                    }
+                } catch (_: Exception) { null } ?: "app-logo.png"
+                val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                val logoPath = "appearance/${session.userId}-${System.currentTimeMillis()}-app-logo-$safeName"
+                val encodedLogoPath = logoPath.split("/").joinToString("/") {
+                    URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                }
+                val uploadImage = URL("$base/storage/v1/object/media/$encodedLogoPath").openConnection() as HttpURLConnection
+                try {
+                    uploadImage.requestMethod = "POST"
+                    uploadImage.connectTimeout = 25000
+                    uploadImage.readTimeout = 90000
+                    uploadImage.doOutput = true
+                    uploadImage.setRequestProperty("apikey", key)
+                    uploadImage.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                    uploadImage.setRequestProperty("Content-Type", mime)
+                    uploadImage.setRequestProperty("x-upsert", "false")
+                    resolver.openInputStream(imageUri)?.use { input ->
+                        uploadImage.outputStream.use { output -> input.copyTo(output, 64 * 1024) }
+                    } ?: throw Exception("Logo image read nahi ho saki.")
+                    val code = uploadImage.responseCode
+                    val response = (if (code in 200..299) uploadImage.inputStream else uploadImage.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Logo upload HTTP $code: $response")
+                } finally {
+                    uploadImage.disconnect()
+                }
+
+                val logoUrl = publicAppearanceUrl(logoPath)
+                settings.put("logo", logoUrl)
+                if (!settings.has("name")) settings.put("name", "MS Editor Media Hub")
+                val settingsPath = APPEARANCE_SETTINGS_PATH.split("/").joinToString("/") {
+                    URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                }
+                val saveSettings = URL("$base/storage/v1/object/media/$settingsPath").openConnection() as HttpURLConnection
+                try {
+                    saveSettings.requestMethod = "POST"
+                    saveSettings.connectTimeout = 25000
+                    saveSettings.readTimeout = 30000
+                    saveSettings.doOutput = true
+                    saveSettings.setRequestProperty("apikey", key)
+                    saveSettings.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                    saveSettings.setRequestProperty("Content-Type", "application/json")
+                    saveSettings.setRequestProperty("x-upsert", "true")
+                    saveSettings.outputStream.use { it.write(settings.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = saveSettings.responseCode
+                    val response = (if (code in 200..299) saveSettings.inputStream else saveSettings.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Logo setting save HTTP $code: $response")
+                } finally {
+                    saveSettings.disconnect()
+                }
+                logoUrl
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
     fun getPublicMediaUrl(path: String): String {
 
         val cleanPath = path.trim()
@@ -483,4 +835,193 @@ connection.setRequestProperty("Accept", "application/json")
             "/storage/v1/object/public/media/" +
             encodedPath
     }
+
+    data class UserProfile(
+        val username: String = "",
+        val displayName: String = "",
+        val avatarPath: String = "",
+        val coverPath: String = "",
+        val bio: String = "",
+        val location: String = "",
+        val followers: Int = 0,
+        val following: Int = 0
+    )
+
+    private fun profileRequest(token: String, method: String, path: String, body: String? = null, storage: Boolean = false, mime: String = "application/json", prefer: String? = null): String {
+        val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+        val endpoint = if (storage) "$base/storage/v1/$path" else "$base/rest/v1/$path"
+        val connection = URL(endpoint).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = method
+            connection.connectTimeout = 20000
+            connection.readTimeout = 90000
+            connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("Accept", "application/json")
+            if (!storage) {
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.setRequestProperty("Accept-Profile", "public")
+                connection.setRequestProperty("Content-Profile", "public")
+                if (prefer != null) connection.setRequestProperty("Prefer", prefer)
+                else if (body != null) connection.setRequestProperty("Prefer", "resolution=merge-duplicates,return=minimal")
+            } else if (body != null) {
+                connection.setRequestProperty("Content-Type", mime)
+                connection.setRequestProperty("x-upsert", "false")
+            }
+            if (body != null) {
+                connection.doOutput = true
+                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw Exception("Profile request HTTP $code: $response")
+            return response
+        } finally { connection.disconnect() }
+    }
+
+    fun saveUserIdentity(token: String, userId: String, displayName: String, username: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                val body = JSONObject()
+                    .put("id", userId)
+                    .put("display_name", displayName.take(80))
+                    .put("username", username.take(30))
+                profileRequest(token, "POST", "profiles?on_conflict=id", body.toString())
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun saveProfileImages(token: String, userId: String, avatarPath: String, coverPath: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                val body = JSONObject()
+                    .put("id", userId)
+                    .put("avatar_path", avatarPath)
+                    .put("cover_path", coverPath)
+                profileRequest(token, "POST", "profiles?on_conflict=id", body.toString())
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun getSignedPrivateMediaUrl(storagePath: String, token: String, callback: (Result<String>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank()) { "Private post dekhne ke liye login zaroori hai." }
+                require(storagePath.startsWith("private-user-posts/")) { "Private media path sahi nahi hai." }
+                val objectPath = storagePath.removePrefix("private-user-posts/")
+                val encoded = objectPath.split("/").joinToString("/") {
+                    URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+                }
+                val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                val connection = URL("$base/storage/v1/object/sign/private-user-posts/$encoded").openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 20000
+                    connection.readTimeout = 30000
+                    connection.doOutput = true
+                    connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    connection.setRequestProperty("Authorization", "Bearer $token")
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use {
+                        it.write(JSONObject().put("expiresIn", 3600).toString().toByteArray(Charsets.UTF_8))
+                    }
+                    val code = connection.responseCode
+                    val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Private media HTTP $code: $response")
+                    val signed = JSONObject(response).optString("signedURL").ifBlank {
+                        JSONObject(response).optString("signedUrl")
+                    }
+                    require(signed.isNotBlank()) { "Signed media link nahi mili." }
+                    if (signed.startsWith("http")) signed else base + if (signed.startsWith("/")) signed else "/$signed"
+                } finally { connection.disconnect() }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun getUserProfile(token: String, userId: String, callback: (Result<UserProfile>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                val id = URLEncoder.encode(userId, "UTF-8")
+                val rows = JSONArray(profileRequest(token, "GET", "profiles?select=username,display_name,avatar_path,cover_path,bio,location&id=eq.$id"))
+                val row = if (rows.length() > 0) rows.getJSONObject(0) else JSONObject()
+                val followers = JSONArray(profileRequest(token, "GET", "user_follows?select=follower_id&following_id=eq.$id")).length()
+                val following = JSONArray(profileRequest(token, "GET", "user_follows?select=following_id&follower_id=eq.$id")).length()
+                UserProfile(
+                    row.optString("username"), row.optString("display_name"),
+                    row.optString("avatar_path"), row.optString("cover_path"),
+                    row.optString("bio"), row.optString("location"), followers, following
+                )
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun saveUserProfile(token: String, userId: String, bio: String, location: String, avatarPath: String, coverPath: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                val body = JSONObject()
+                    .put("id", userId)
+                    .put("bio", bio.take(500))
+                    .put("location", location.take(100))
+                    .put("avatar_path", avatarPath)
+                    .put("cover_path", coverPath)
+                profileRequest(token, "POST", "profiles?on_conflict=id", body.toString())
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun uploadProfileImage(context: android.content.Context, token: String, userId: String, uri: android.net.Uri, kind: String, callback: (Result<String>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(kind == "avatar" || kind == "cover") { "Invalid profile image type." }
+                val resolver = context.contentResolver
+                val mime = resolver.getType(uri) ?: "image/jpeg"
+                require(mime in listOf("image/jpeg", "image/png", "image/webp", "image/gif")) { "JPG, PNG, WEBP ya GIF image select karein." }
+                val ext = when (mime) { "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
+                val path = "$userId/$kind-${java.util.UUID.randomUUID()}.$ext"
+                val encoded = path.split("/").joinToString("/") { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+                val base = SupabaseConfig.SUPABASE_URL.trimEnd('/')
+                val connection = URL("$base/storage/v1/object/profile-images/$encoded").openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 20000
+                    connection.readTimeout = 90000
+                    connection.doOutput = true
+                    connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    connection.setRequestProperty("Authorization", "Bearer $token")
+                    connection.setRequestProperty("Content-Type", mime)
+                    connection.setRequestProperty("x-upsert", "false")
+                    resolver.openInputStream(uri)?.use { input -> connection.outputStream.use { output -> input.copyTo(output, 64 * 1024) } }
+                        ?: throw Exception("Gallery image read nahi ho saki.")
+                    val code = connection.responseCode
+                    val response = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Image upload HTTP $code: $response")
+                } finally { connection.disconnect() }
+                path
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun getProfileImageUrl(path: String): String {
+        val clean = path.trim()
+        if (clean.isBlank()) return ""
+        if (clean.startsWith("https://") || clean.startsWith("http://")) return clean
+        val encoded = clean.removePrefix("/").split("/").joinToString("/") { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+        return SupabaseConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/profile-images/" + encoded
+    }
+
 }

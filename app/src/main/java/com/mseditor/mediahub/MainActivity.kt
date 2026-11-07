@@ -599,9 +599,19 @@ class MainActivity : Activity() {
         }
         val titleField = edit("Media title")
         val descriptionField = edit("Description (optional)", true)
+        val promptField = edit("Image Prompt / Video Prompt yahan likhein", true).apply {
+            visibility = View.GONE
+        }
         val category = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
                 listOf("Video Songs", "Video Tutorial", "Video Prompt", "Image Prompt", "Presets & Assets"))
+            onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    promptField.visibility = if (position == 2 || position == 3) View.VISIBLE else View.GONE
+                    promptField.hint = if (position == 2) "Video Prompt" else "Image Prompt"
+                }
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            }
         }
         val mediaLabel = text("No media file selected", 13f, Color.LTGRAY)
         val posterLabel = text("Poster: optional", 13f, Color.LTGRAY)
@@ -613,6 +623,7 @@ class MainActivity : Activity() {
         }
         add(titleField, 12)
         add(descriptionField)
+        add(promptField)
         add(text("Category", 13f, gold), 12)
         add(category)
         add(actionButton("Choose Media File") {
@@ -642,11 +653,16 @@ class MainActivity : Activity() {
                 3 -> "image_prompt"
                 else -> "presets_assets"
             }
+            val promptValue = promptField.text.toString().trim()
+            if ((mediaType == "video_prompt" || mediaType == "image_prompt") && promptValue.isBlank()) {
+                promptField.error = "Prompt zaroor likhein"
+                return@actionButton
+            }
             uploadButton.isEnabled = false
             uploadButton.text = "Uploading..."
             status.text = "File upload ho rahi hai. App band na karein..."
             SupabaseClient.uploadMedia(this, session, mediaUri, selectedPosterUri,
-                titleValue, descriptionField.text.toString().trim(), mediaType) { result ->
+                titleValue, descriptionField.text.toString().trim(), mediaType, promptValue) { result ->
                 if (isFinishing || isDestroyed) return@uploadMedia
                 uploadButton.isEnabled = true
                 uploadButton.text = "Upload to Supabase"
@@ -658,6 +674,7 @@ class MainActivity : Activity() {
                     posterLabel.text = "Poster: optional"
                     titleField.text.clear()
                     descriptionField.text.clear()
+                    promptField.text.clear()
                     Toast.makeText(this, "Media upload ho gaya.", Toast.LENGTH_LONG).show()
                 }.onFailure { e ->
                     status.text = "Upload failed: ${e.message}"

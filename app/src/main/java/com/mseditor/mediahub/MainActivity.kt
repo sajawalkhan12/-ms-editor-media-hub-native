@@ -231,7 +231,8 @@ class MainActivity : Activity() {
         }
         val brandTitle = text("MS EDITOR MEDIA HUB", 16f, emerald, true)
         val brandLogo = ImageView(this).apply {
-            visibility = View.GONE
+            setImageResource(R.mipmap.ic_launcher)
+            visibility = View.VISIBLE
             scaleType = ImageView.ScaleType.FIT_CENTER
             adjustViewBounds = true
             contentDescription = "MS Editor Media Hub logo"
@@ -389,7 +390,6 @@ class MainActivity : Activity() {
             if (isFinishing || isDestroyed) return@getAppLogo
             val logoUrl = result.getOrNull().orEmpty()
             if (logoUrl.isBlank()) {
-                target.visibility = View.GONE
                 return@getAppLogo
             }
             imageExecutor.execute {

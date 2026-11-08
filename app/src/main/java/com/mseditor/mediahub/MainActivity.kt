@@ -847,6 +847,50 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun confirmUserLogout() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Logout")
+            .setMessage("Kya aap apne account se logout karna chahte hain?")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Logout") { _, _ -> logoutUser() }
+            .show()
+    }
+
+    private fun logoutUser() {
+        val token = getSharedPreferences("auth_session", MODE_PRIVATE)
+            .getString("access_token", "").orEmpty()
+        imageExecutor.execute {
+            try {
+                if (token.isNotBlank()) {
+                    val connection = URL(
+                        SupabaseConfig.SUPABASE_URL.trimEnd('/') + "/auth/v1/logout"
+                    ).openConnection() as HttpURLConnection
+                    try {
+                        connection.requestMethod = "POST"
+                        connection.connectTimeout = 10000
+                        connection.readTimeout = 10000
+                        connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                        connection.setRequestProperty("Authorization", "Bearer $token")
+                        connection.responseCode
+                    } finally {
+                        connection.disconnect()
+                    }
+                }
+            } catch (_: Exception) {
+                // Clear this device's session even if the server token has expired.
+            }
+            getSharedPreferences("auth_session", MODE_PRIVATE).edit().clear().apply()
+            mainHandler.post {
+                Toast.makeText(this, "Aap logout ho gaye hain.", Toast.LENGTH_SHORT).show()
+                startActivity(
+                    Intent(this, AuthActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                )
+                finish()
+            }
+        }
+    }
+
     private fun showProfilePage(retryOnAuthError: Boolean = true) {
         isProfileVisible = true
         val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
@@ -864,7 +908,14 @@ class MainActivity : Activity() {
         toolbar.addView(text("PROFILE", 18f, gold, true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, dp(42), 1f))
         toolbar.addView(text("⋮", 25f, white, true).apply {
             gravity = Gravity.CENTER; setPadding(dp(12), 0, dp(8), 0)
-            setOnClickListener { android.app.AlertDialog.Builder(this@MainActivity).setItems(arrayOf("Back to Home")) { _, _ -> showHome() }.show() }
+            setOnClickListener {
+                android.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Profile Options")
+                    .setItems(arrayOf("Back to Home", "Logout")) { _, which ->
+                        if (which == 0) showHome() else confirmUserLogout()
+                    }
+                    .show()
+            }
         }, LinearLayout.LayoutParams(dp(42), dp(42)))
         page.addView(toolbar)
 

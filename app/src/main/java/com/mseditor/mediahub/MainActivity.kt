@@ -847,7 +847,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showProfilePage() {
+    private fun showProfilePage(retryOnAuthError: Boolean = true) {
         isProfileVisible = true
         val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
         profileAccessToken = prefs.getString("access_token", "").orEmpty()
@@ -948,7 +948,18 @@ class MainActivity : Activity() {
                 (postsStat.getChildAt(0) as? TextView)?.text = memberPosts.size.toString()
                 renderProfilePosts()
             }.onFailure { error ->
-                Toast.makeText(this, "Profile posts load nahi huin: ${error.message}", Toast.LENGTH_LONG).show()
+                if (error.message.orEmpty().contains("HTTP 401") && retryOnAuthError) {
+                    SupabaseClient.refreshSession(this) { refreshResult ->
+                        if (isFinishing || isDestroyed) return@refreshSession
+                        refreshResult.onSuccess {
+                            showProfilePage(false)
+                        }.onFailure { refreshError ->
+                            Toast.makeText(this, "Session refresh nahi hui: ${refreshError.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                } else {
+                    Toast.makeText(this, "Profile posts load nahi huin: ${error.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
         SupabaseClient.getUserProfile(profileAccessToken, profileUserId) { result ->

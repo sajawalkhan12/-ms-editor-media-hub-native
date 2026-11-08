@@ -32,6 +32,51 @@ object SupabaseClient {
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    fun refreshSession(context: android.content.Context, callback: (Result<String>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val prefs = context.getSharedPreferences("auth_session", android.content.Context.MODE_PRIVATE)
+                val refreshToken = prefs.getString("refresh_token", "").orEmpty()
+                require(refreshToken.isNotBlank()) { "Login session expire ho gayi. Dobara login karein." }
+
+                val connection = URL(
+                    SupabaseConfig.SUPABASE_URL.trimEnd('/') + "/auth/v1/token?grant_type=refresh_token"
+                ).openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 20000
+                    connection.readTimeout = 25000
+                    connection.doOutput = true
+                    connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use {
+                        it.write(JSONObject().put("refresh_token", refreshToken).toString().toByteArray(Charsets.UTF_8))
+                    }
+                    val code = connection.responseCode
+                    val raw = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val error = JSONObject(raw)
+                        throw Exception(error.optString("msg").ifBlank { error.optString("message") }
+                            .ifBlank { error.optString("error_description") }.ifBlank { "Session refresh HTTP $code" })
+                    }
+                    val session = JSONObject(raw)
+                    val newAccessToken = session.optString("access_token")
+                    require(newAccessToken.isNotBlank()) { "Supabase ne naya access token nahi diya." }
+                    val newRefreshToken = session.optString("refresh_token").ifBlank { refreshToken }
+                    prefs.edit()
+                        .putString("access_token", newAccessToken)
+                        .putString("refresh_token", newRefreshToken)
+                        .apply()
+                    newAccessToken
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
     fun getMediaItems(
         token: String? = null,
         callback: (Result<List<MediaItem>>) -> Unit

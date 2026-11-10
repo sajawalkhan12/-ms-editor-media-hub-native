@@ -193,6 +193,48 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun addExpandableDescription(
+        parent: LinearLayout,
+        value: String,
+        topPadding: Int = 0,
+        bottomPadding: Int = 0
+    ) {
+        val description = text(value, 13f, white).apply {
+            setPadding(0, dp(topPadding), 0, dp(bottomPadding))
+            maxLines = 3
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        val more = text("More", 12f, gold, true).apply {
+            setPadding(0, dp(2), 0, dp(5))
+            visibility = View.GONE
+        }
+
+        parent.addView(description)
+        parent.addView(more)
+
+        description.post {
+            val layout = description.layout
+            if (layout != null && layout.lineCount > 0 &&
+                layout.getEllipsisCount(layout.lineCount - 1) > 0
+            ) {
+                more.visibility = View.VISIBLE
+            }
+        }
+
+        more.setOnClickListener {
+            val expanded = description.maxLines == 3
+            if (expanded) {
+                description.maxLines = Int.MAX_VALUE
+                description.ellipsize = null
+                more.text = "Less"
+            } else {
+                description.maxLines = 3
+                description.ellipsize = android.text.TextUtils.TruncateAt.END
+                more.text = "More"
+            }
+        }
+    }
+
     private fun releaseMediaPlayers() {
         exoPlayers.forEach { player ->
             try {
@@ -1544,13 +1586,11 @@ private fun openProfileImagePicker(requestCode: Int) {
             } else if (isPrompt(item) && mediaKind(item) == "text") {
                 // Text prompt records still display their saved poster.
                 if (poster.isNotBlank()) addImage(card, poster, 16f / 9f)
-                if (item.description.isNotBlank()) card.addView(text(item.description, 13f, white))
+                if (item.description.isNotBlank()) addExpandableDescription(card, item.description)
                 addViewPromptButton(card, item)
             } else {
                 if (item.description.isNotBlank()) {
-                    val description = text(item.description, 13f, white)
-                    description.setPadding(0, dp(7), 0, dp(8))
-                    card.addView(description)
+                    addExpandableDescription(card, item.description, 7, 8)
                 }
 
                 when (mediaKind(item)) {
@@ -2149,12 +2189,12 @@ private fun openProfileImagePicker(requestCode: Int) {
 
                 } else if (isPrompt(item) && mediaKind(item) == "text") {
                     if (poster.isNotBlank()) addImage(card, poster, 16f / 9f)
-                    if (item.description.isNotBlank()) card.addView(text(item.description, 13f, white))
+                    if (item.description.isNotBlank()) addExpandableDescription(card, item.description)
                     addViewPromptButton(card, item)
 
                 } else {
                     if (item.description.isNotBlank()) {
-                        card.addView(text(item.description, 13f, white))
+                        addExpandableDescription(card, item.description)
                     }
 
                     when (mediaKind(item)) {

@@ -1383,11 +1383,14 @@ private fun openProfileImagePicker(requestCode: Int) {
             "${item.mediaType} ${item.title} ${item.description} ${item.promptText}"
 
         val type = item.mediaType.trim().lowercase().replace('-', '_').replace(' ', '_')
-        return type == "image_prompt" ||
-            combined.contains("image prompt", true) ||
-            (item.promptText.isNotBlank() &&
-                !combined.contains("video prompt", true) &&
-                mediaKind(item) != "video")
+        val isVideoPrompt = type.contains("video_prompt") ||
+            type == "video_prompt" ||
+            combined.contains("video prompt", true)
+        return !isVideoPrompt && (
+            type == "image_prompt" ||
+                combined.contains("image prompt", true) ||
+                (item.promptText.isNotBlank() && mediaKind(item) != "video")
+            )
     }
 
     private fun isPrompt(item: MediaItem): Boolean {
@@ -1405,7 +1408,7 @@ private fun openProfileImagePicker(requestCode: Int) {
         val isUserPost = item.createdBy.isNotBlank() &&
             (item.storagePath.startsWith("user-posts/") ||
              item.storagePath.startsWith("private-user-posts/") ||
-             (item.externalUrl.isNotBlank() && item.mediaType.equals("movie", true)))
+             item.externalUrl.isNotBlank())
         if (isUserPost || item.visibility != "public") return false
         val type = item.mediaType.lowercase().replace('-', '_').replace(' ', '_')
         val title = item.title.lowercase()
@@ -1464,7 +1467,7 @@ private fun openProfileImagePicker(requestCode: Int) {
             val isMemberPost = item.createdBy.isNotBlank() &&
                 (item.storagePath.startsWith("user-posts/") ||
                  item.storagePath.startsWith("private-user-posts/") ||
-                 (item.externalUrl.isNotBlank() && item.mediaType.equals("movie", true)))
+                 item.externalUrl.isNotBlank())
             if (isMemberPost) {
                 val authorRow = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL

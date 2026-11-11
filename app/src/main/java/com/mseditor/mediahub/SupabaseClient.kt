@@ -716,7 +716,7 @@ object SupabaseClient {
                 val body = JSONObject()
                     .put("title", title.take(160))
                     .put("description", description.take(2000))
-                    .put("media_type", "movie")
+                    .put("media_type", "video")
                     .put("storage_path", "")
                     .put("external_url", cleanUrl)
                     .put("poster_path", "")

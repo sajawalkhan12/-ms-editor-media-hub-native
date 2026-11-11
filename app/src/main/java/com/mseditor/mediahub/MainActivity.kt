@@ -1598,7 +1598,8 @@ private fun openProfileImagePicker(requestCode: Int) {
                     "audio" -> addNativeMediaPlayer(card, url, false)
                     "video" -> {
                         val thumbnail = when {
-                            poster.isNotBlank() -> poster                            youtubeId.isNotBlank() -> "https://img.youtube.com/vi/$youtubeId/hqdefault.jpg"
+                            poster.isNotBlank() -> poster
+                            youtubeId.isNotBlank() -> "https://img.youtube.com/vi/$youtubeId/hqdefault.jpg"
                             else -> ""
                         }
                         addVideoThumbnail(card, thumbnail, url, poster)

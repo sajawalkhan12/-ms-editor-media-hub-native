@@ -797,8 +797,7 @@ class MainActivity : Activity() {
                 addCategory(Intent.CATEGORY_OPENABLE); type = "video/*"
             }, PICK_USER_POST_FILE)
         }
-        addBoxButton(postBox, "🖼  Image Upload") {
-            selectedUserPostType = "image"
+        addBoxButton(postBox, "🖼  Image Upload") {            selectedUserPostType = "image"
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE); type = "image/*"
             }, PICK_USER_POST_FILE)
@@ -1429,9 +1428,11 @@ private fun openProfileImagePicker(requestCode: Int) {
                 isImagePrompt(item)
 
             "assets", "presets & assets" ->
-                type in listOf("assets", "asset", "image", "movie", "trailer", "preset", "presets") ||
-                    combined.contains("asset") || combined.contains("resource") ||
-                    combined.contains("template") || kind == "image"
+                !isPrompt(item) && (
+                    type in listOf("assets", "asset", "image", "movie", "trailer", "preset", "presets") ||
+                        combined.contains("asset") || combined.contains("resource") ||
+                        combined.contains("template") || kind == "image"
+                    )
 
             "tutorials", "video tutorial" ->
                 type.contains("tutorial") || combined.contains("tutorial") ||
@@ -1597,8 +1598,7 @@ private fun openProfileImagePicker(requestCode: Int) {
                     "audio" -> addNativeMediaPlayer(card, url, false)
                     "video" -> {
                         val thumbnail = when {
-                            poster.isNotBlank() -> poster
-                            youtubeId.isNotBlank() -> "https://img.youtube.com/vi/$youtubeId/hqdefault.jpg"
+                            poster.isNotBlank() -> poster                            youtubeId.isNotBlank() -> "https://img.youtube.com/vi/$youtubeId/hqdefault.jpg"
                             else -> ""
                         }
                         addVideoThumbnail(card, thumbnail, url, poster)
@@ -2397,8 +2397,7 @@ private fun openProfileImagePicker(requestCode: Int) {
                                     } else {
                                         android.app.AlertDialog.Builder(this)
                                             .setTitle("Delete comment?")
-                                            .setMessage("Kya aap is comment ko delete karna chahte hain?")
-                                            .setNegativeButton("Cancel", null)
+                                            .setMessage("Kya aap is comment ko delete karna chahte hain?")                                            .setNegativeButton("Cancel", null)
                                             .setPositiveButton("Delete") { _, _ ->
                                                 SupabaseClient.deleteComment(session, comment.id) { deleted ->
                                                     deleted.onSuccess {

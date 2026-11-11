@@ -2287,14 +2287,13 @@ private fun openProfileImagePicker(requestCode: Int) {
         }
         addAction("💬 Comment") { showComments(item, stats) }
         addAction("↗ Share") {
-            // Share only the post's public media/poster URL, never prompt text.
-            val postUrl = mediaUrl.ifBlank { mediaUrl(item.posterPath) }
-            if (postUrl.isBlank()) {
-                Toast.makeText(this, "Is post ka URL available nahi hai.", Toast.LENGTH_LONG).show()
+            if (item.visibility != "public") {
+                Toast.makeText(this, "Private post ka public share link available nahi hai.", Toast.LENGTH_LONG).show()
             } else {
+                val postUrl = "https://sajawalkhan12.github.io/ms-editor-media-hub-/?post=${Uri.encode(item.id)}"
                 val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Post URL", postUrl))
-                Toast.makeText(this, "Post URL copy ho gaya.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Post ka website link copy ho gaya.", Toast.LENGTH_SHORT).show()
             }
         }
         addAction("↓ Download") {

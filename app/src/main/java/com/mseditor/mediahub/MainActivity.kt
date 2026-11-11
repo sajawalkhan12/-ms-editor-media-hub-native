@@ -797,7 +797,8 @@ class MainActivity : Activity() {
                 addCategory(Intent.CATEGORY_OPENABLE); type = "video/*"
             }, PICK_USER_POST_FILE)
         }
-        addBoxButton(postBox, "🖼  Image Upload") {            selectedUserPostType = "image"
+        addBoxButton(postBox, "🖼  Image Upload") {
+            selectedUserPostType = "image"
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE); type = "image/*"
             }, PICK_USER_POST_FILE)

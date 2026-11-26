@@ -20,7 +20,7 @@ object PushTokenRegistrar {
 
         executor.execute {
             runCatching {
-                val endpoint = SupabaseConfig.SUPABASE_URL.trimEnd() +
+                val endpoint = SupabaseConfig.SUPABASE_URL.trimEnd('/') +
                     "/rest/v1/user_push_tokens?on_conflict=fcm_token"
                 val connection = URL(endpoint).openConnection() as HttpURLConnection
                 try {

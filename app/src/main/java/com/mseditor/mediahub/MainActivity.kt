@@ -93,6 +93,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val language = getSharedPreferences("app_settings", MODE_PRIVATE).getString("language_code", "en").orEmpty()
+        AppTranslator.configure(this, language)
         showSplashScreen()
     }
 
@@ -183,12 +185,16 @@ class MainActivity : Activity() {
         color: Int,
         bold: Boolean = false
     ): TextView {
-        return TextView(this).apply {
+        val view = TextView(this).apply {
             text = value
             textSize = size
             setTextColor(color)
             if (bold) typeface = Typeface.DEFAULT_BOLD
         }
+        AppTranslator.translate(value) { translated ->
+            if (view.text.toString() == value) view.text = translated
+        }
+        return view
     }
 
     private fun addExpandableDescription(

@@ -1004,18 +1004,6 @@ class MainActivity : Activity() {
             setBackgroundColor(black)
             addView(page)
         }
-        postsStat.setOnClickListener {
-            currentPostFilter = "new"
-            renderProfilePosts()
-            profileScroll.post { profileScroll.smoothScrollTo(0, postsContainer.top) }
-        }
-        followersStat.setOnClickListener {
-            showFollowUsersPage(profileAccessToken, profileUserId, true)
-        }
-        followingStat.setOnClickListener {
-            showFollowUsersPage(profileAccessToken, profileUserId, false)
-        }
-
         postsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         var memberPosts = emptyList<MediaItem>()
         var currentPostFilter = "new"
@@ -1026,6 +1014,17 @@ class MainActivity : Activity() {
                 else -> memberPosts.filter { it.visibility == "public" }.sortedByDescending { it.createdAt }
             }
             showMediaItems(visible)
+        }
+        postsStat.setOnClickListener {
+            currentPostFilter = "new"
+            renderProfilePosts()
+            profileScroll.post { profileScroll.smoothScrollTo(0, postsContainer.top) }
+        }
+        followersStat.setOnClickListener {
+            showFollowUsersPage(profileAccessToken, profileUserId, true)
+        }
+        followingStat.setOnClickListener {
+            showFollowUsersPage(profileAccessToken, profileUserId, false)
         }
         page.addView(text("UPLOAD POST FORM", 15f, emerald, true).apply {
             setPadding(dp(8), dp(16), dp(8), dp(6))
@@ -1173,7 +1172,8 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
         if (userId == profileUserId) { showProfilePage(); return }
         val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
         val token = prefs.getString("access_token", "").orEmpty()
-        if (token.isBlank()) { startActivity(Intent(this, AuthActivity::class.java)); finish(); return }
+        profileUserId = prefs.getString("user_id", "").orEmpty()
+        if (token.isBlank() || profileUserId.isBlank()) { startActivity(Intent(this, AuthActivity::class.java)); finish(); return }
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(24))

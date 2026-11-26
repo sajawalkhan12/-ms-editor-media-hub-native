@@ -10,6 +10,13 @@ import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.Executors
 
+data class FollowUser(
+    val id: String,
+    val username: String,
+    val displayName: String,
+    val avatarPath: String
+)
+
 data class MediaItem(
     val id: String,
     val title: String,
@@ -531,6 +538,35 @@ object SupabaseClient {
     }
 
 
+
+    fun getFollowUsers(token: String, userId: String, showFollowers: Boolean, callback: (Result<List<FollowUser>>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(token.isNotBlank() && userId.isNotBlank()) { "Login session nahi mili." }
+                val id = URLEncoder.encode(userId, "UTF-8")
+                val idColumn = if (showFollowers) "follower_id" else "following_id"
+                val rows = JSONArray(profileRequest(token, "GET", "user_follows?select=$idColumn&${if (showFollowers) "following_id" else "follower_id"}=eq.$id"))
+                val ids = (0 until rows.length()).mapNotNull { index ->
+                    rows.optJSONObject(index)?.optString(idColumn)?.takeIf { it.isNotBlank() }
+                }.distinct()
+                if (ids.isEmpty()) emptyList()
+                else {
+                    val inFilter = ids.joinToString(",")
+                    val profiles = JSONArray(profileRequest(token, "GET", "profiles?select=id,username,display_name,avatar_path&id=in.($inFilter)"))
+                    val byId = (0 until profiles.length()).mapNotNull { index ->
+                        profiles.optJSONObject(index)?.let { row ->
+                            val profileId = row.optString("id")
+                            if (profileId.isBlank()) null else profileId to FollowUser(
+                                profileId, row.optString("username"), row.optString("display_name"), row.optString("avatar_path")
+                            )
+                        }
+                    }.toMap()
+                    ids.mapNotNull { byId[it] }
+                }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
 
     fun isFollowing(token: String, followerId: String, followingId: String, callback: (Boolean) -> Unit) {
         executor.execute {

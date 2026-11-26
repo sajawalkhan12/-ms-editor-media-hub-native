@@ -1107,4 +1107,88 @@ object SupabaseClient {
         return SupabaseConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/profile-images/" + encoded
     }
 
+
+    data class InboxUser(val id: String, val username: String, val displayName: String, val avatarPath: String)
+    data class InboxMessage(val id: String, val senderId: String, val recipientId: String, val message: String, val createdAt: String, val readAt: String)
+    data class UserNotification(val id: String, val type: String, val title: String, val body: String, val createdAt: String, val readAt: String)
+
+    fun searchInboxUsers(token: String, username: String, callback: (Result<List<InboxUser>>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val term = URLEncoder.encode(username.trim().removePrefix("@"), "UTF-8")
+                val rows = JSONArray(profileRequest(token, "GET", "profiles?select=id,username,display_name,avatar_path&username=ilike.*$term*&limit=25"))
+                (0 until rows.length()).map { i ->
+                    val row = rows.getJSONObject(i)
+                    InboxUser(row.optString("id"), row.optString("username"), row.optString("display_name"), row.optString("avatar_path"))
+                }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun getInboxMessages(token: String, userId: String, otherId: String, callback: (Result<List<InboxMessage>>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val me = URLEncoder.encode(userId, "UTF-8")
+                val other = URLEncoder.encode(otherId, "UTF-8")
+                val filter = "or=(and(sender_id.eq.$me,recipient_id.eq.$other),and(sender_id.eq.$other,recipient_id.eq.$me))"
+                val rows = JSONArray(profileRequest(token, "GET", "messages?select=id,sender_id,recipient_id,message,created_at,read_at&$filter&order=created_at.asc&limit=300"))
+                (0 until rows.length()).map { i ->
+                    val row = rows.getJSONObject(i)
+                    InboxMessage(row.optString("id"), row.optString("sender_id"), row.optString("recipient_id"), row.optString("message"), row.optString("created_at"), row.optString("read_at"))
+                }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun sendInboxMessage(token: String, senderId: String, recipientId: String, message: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                require(message.trim().isNotEmpty()) { "Message likhein." }
+                val body = JSONObject().put("sender_id", senderId).put("recipient_id", recipientId).put("message", message.trim().take(4000)).toString()
+                profileRequest(token, "POST", "messages", body, prefer = "return=minimal")
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun getInboxNotifications(token: String, userId: String, callback: (Result<List<UserNotification>>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val uid = URLEncoder.encode(userId, "UTF-8")
+                val rows = JSONArray(profileRequest(token, "GET", "notifications?select=id,notification_type,title,body,created_at,read_at&user_id=eq.$uid&order=created_at.desc&limit=300"))
+                (0 until rows.length()).map { i ->
+                    val row = rows.getJSONObject(i)
+                    UserNotification(row.optString("id"), row.optString("notification_type"), row.optString("title"), row.optString("body"), row.optString("created_at"), row.optString("read_at"))
+                }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun markInboxNotificationsRead(token: String, userId: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val uid = URLEncoder.encode(userId, "UTF-8")
+                val body = JSONObject().put("read_at", java.time.Instant.now().toString()).toString()
+                profileRequest(token, "PATCH", "notifications?user_id=eq.$uid&read_at=is.null", body, prefer = "return=minimal")
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun addLoginNotification(token: String, userId: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val body = JSONObject().put("user_id", userId).put("notification_type", "login").put("title", "Login alert").put("body", "Your account was opened on this device.").toString()
+                profileRequest(token, "POST", "notifications", body, prefer = "return=minimal")
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
 }

@@ -2908,6 +2908,7 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
         load()
     }
     override fun onDestroy() {
+        chatRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
         releaseMediaPlayers()
         imageExecutor.shutdownNow()
         super.onDestroy()

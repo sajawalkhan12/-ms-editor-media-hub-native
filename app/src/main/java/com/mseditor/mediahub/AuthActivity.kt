@@ -27,9 +27,21 @@ class AuthActivity : Activity() {
 
     private fun dp(v:Int) = (v*resources.displayMetrics.density).toInt()
     private fun bg(c:Int,s:Int=0)=GradientDrawable().apply { setColor(c);cornerRadius=dp(14).toFloat();if(s!=0)setStroke(dp(1),s) }
-    private fun txt(t:String,size:Float=14f,color:Int=Color.WHITE,bold:Boolean=false)=TextView(this).apply { text=t;textSize=size;setTextColor(color);if(bold)typeface=Typeface.DEFAULT_BOLD }
-    private fun field(h:String,type:Int=android.text.InputType.TYPE_CLASS_TEXT)=EditText(this).apply { hint=h;setSingleLine(true);textSize=15f;setTextColor(Color.WHITE);setHintTextColor(Color.LTGRAY);setPadding(dp(14),dp(13),dp(14),dp(13));background=bg(panel,green);inputType=type }
-    private fun btn(t:String,primary:Boolean=false,action:()->Unit)=TextView(this).apply { text=t;gravity=Gravity.CENTER;textSize=15f;typeface=Typeface.DEFAULT_BOLD;setTextColor(if(primary)black else Color.WHITE);background=bg(if(primary)green else panel,if(primary)0 else gold);setPadding(dp(12),dp(14),dp(12),dp(14));setOnClickListener{action()} }
+    private fun txt(t:String,size:Float=14f,color:Int=Color.WHITE,bold:Boolean=false):TextView {
+        val view=TextView(this).apply { text=t;textSize=size;setTextColor(color);if(bold)typeface=Typeface.DEFAULT_BOLD }
+        AppTranslator.translate(t) { translated -> if (view.text.toString()==t) view.text=translated }
+        return view
+    }
+    private fun field(h:String,type:Int=android.text.InputType.TYPE_CLASS_TEXT):EditText {
+        val view=EditText(this).apply { hint=h;setSingleLine(true);textSize=15f;setTextColor(Color.WHITE);setHintTextColor(Color.LTGRAY);setPadding(dp(14),dp(13),dp(14),dp(13));background=bg(panel,green);inputType=type }
+        AppTranslator.translate(h) { translated -> if (view.hint.toString()==h) view.hint=translated }
+        return view
+    }
+    private fun btn(t:String,primary:Boolean=false,action:()->Unit):TextView {
+        val view=TextView(this).apply { text=t;gravity=Gravity.CENTER;textSize=15f;typeface=Typeface.DEFAULT_BOLD;setTextColor(if(primary)black else Color.WHITE);background=bg(if(primary)green else panel,if(primary)0 else gold);setPadding(dp(12),dp(14),dp(12),dp(14));setOnClickListener{action()} }
+        AppTranslator.translate(t) { translated -> if (view.text.toString()==t) view.text=translated }
+        return view
+    }
     private fun add(v:android.view.View,top:Int=9){page.addView(v,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(top)})}
 
     override fun onCreate(savedInstanceState:Bundle?){
@@ -37,6 +49,7 @@ class AuthActivity : Activity() {
         window.statusBarColor=Color.BLACK
         window.navigationBarColor=Color.BLACK
         val prefs=getSharedPreferences("app_settings",MODE_PRIVATE)
+        AppTranslator.configure(this, prefs.getString("language_code","en").orEmpty())
         if(prefs.getString("language_code",null).isNullOrBlank()) showLanguagePage() else showPage()
     }
 
@@ -308,16 +321,21 @@ class AuthActivity : Activity() {
             "lb",
             "eo"
         )
+        val supportedCodes=setOf("af","ar","be","bg","bn","ca","cs","cy","da","de","el","en","eo","es","et","fa","fi","fr","ga","gl","gu","he","hi","hr","ht","hu","id","is","it","ja","ka","kn","ko","lt","lv","mk","mr","ms","nl","no","pl","pt","ro","ru","sk","sl","sq","sv","sw","ta","te","th","tl","tr","uk","ur","vi","zh")
+        val supportedIndices=languageCodes.indices.filter { AppTranslator.normalizeCode(languageCodes[it]) in supportedCodes }.distinctBy { AppTranslator.normalizeCode(languageCodes[it]) }
+        val pickerNames=supportedIndices.map { languageNames[it] }
         val picker=Spinner(this).apply{
-            adapter=ArrayAdapter(this@AuthActivity,android.R.layout.simple_spinner_dropdown_item,languageNames)
+            adapter=ArrayAdapter(this@AuthActivity,android.R.layout.simple_spinner_dropdown_item,pickerNames)
             background=bg(panel,green)
         }
         add(picker,18)
         add(btn("CONTINUE",true){
-            val index=picker.selectedItemPosition.coerceIn(languageCodes.indices)
+            val position=picker.selectedItemPosition.coerceIn(supportedIndices.indices)
+            val index=supportedIndices[position]
             getSharedPreferences("app_settings",MODE_PRIVATE).edit()
                 .putString("language_code",languageCodes[index])
                 .putString("language_name",languageNames[index]).apply()
+            AppTranslator.configure(this,languageCodes[index])
             showPage()
         },22)
     }

@@ -434,6 +434,8 @@ class MainActivity : Activity() {
         }
 
         val bottomItems = listOf("⌂\nHome", "♫\nVideo Songs", "✉\nInbox", "♧\nNotifications", "♙\nUser Profile")
+        var inboxTab: TextView? = null
+        var notificationTab: TextView? = null
         bottomItems.forEach { item ->
             val tab = text(item, 10.5f, emerald, true).apply {
                 gravity = Gravity.CENTER
@@ -448,7 +450,30 @@ class MainActivity : Activity() {
                     }
                 }
             }
+            if (item.contains("\nInbox")) inboxTab = tab
+            if (item.contains("\nNotifications")) notificationTab = tab
             bottom.addView(tab, LinearLayout.LayoutParams(0, dp(58), 1f))
+        }
+        val sessionPrefs = getSharedPreferences("auth_session", MODE_PRIVATE)
+        val sessionToken = sessionPrefs.getString("access_token", "").orEmpty()
+        val sessionUserId = sessionPrefs.getString("user_id", "").orEmpty()
+        if (sessionToken.isNotBlank() && sessionUserId.isNotBlank()) {
+            SupabaseClient.getUnreadMessageCount(sessionToken, sessionUserId) { countResult ->
+                countResult.onSuccess { count ->
+                    if (count > 0 && inboxTab != null && !isFinishing && !isDestroyed) {
+                        inboxTab?.text = "✉\nInbox ${if (count > 99) "99+" else count}"
+                        inboxTab?.setTextColor(gold)
+                    }
+                }
+            }
+            SupabaseClient.getUnreadNotificationCount(sessionToken, sessionUserId) { countResult ->
+                countResult.onSuccess { count ->
+                    if (count > 0 && notificationTab != null && !isFinishing && !isDestroyed) {
+                        notificationTab?.text = "♧\nNotifications ${if (count > 99) "99+" else count}"
+                        notificationTab?.setTextColor(gold)
+                    }
+                }
+            }
         }
         root.addView(bottom)
         setContentView(root)
@@ -2733,6 +2758,7 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
     private fun openInboxChat(token: String, uid: String, other: String, username: String, avatarPath: String = "") {
         chatRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
         activeChatUserId = other
+        SupabaseClient.markInboxMessagesRead(token, uid, other) { }
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))

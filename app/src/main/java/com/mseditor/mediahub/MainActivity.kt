@@ -399,7 +399,7 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER
                 setPadding(dp(2), dp(7), dp(2), dp(7))
                 setOnClickListener {
-                    when (item.substringAfter("\\n")) {
+                    when (item.substringAfter("\n")) {
                         "Home" -> showHome()
                         "Video Songs" -> showCategory("Video Songs")
                         "Inbox" -> showInboxPage()

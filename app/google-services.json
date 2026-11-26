@@ -1,0 +1,28 @@
+{
+  "project_info": {
+    "project_number": "519659716636",
+    "project_id": "ms-editor-media-hub-f22c6",
+    "storage_bucket": "ms-editor-media-hub-f22c6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:519659716636:android:05e339d79b42349f5b9fd9",
+        "android_client_info": {
+          "package_name": "com.mseditor.mediahub"
+        }
+      },
+      "api_key": [
+        {
+          "current_key": "AIzaSyA60hBWyfQ9g7xJQRJslSpVk_TYbJpOeaw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

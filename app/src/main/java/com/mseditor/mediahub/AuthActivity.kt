@@ -32,7 +32,56 @@ class AuthActivity : Activity() {
     private fun btn(t:String,primary:Boolean=false,action:()->Unit)=TextView(this).apply { text=t;gravity=Gravity.CENTER;textSize=15f;typeface=Typeface.DEFAULT_BOLD;setTextColor(if(primary)black else Color.WHITE);background=bg(if(primary)green else panel,if(primary)0 else gold);setPadding(dp(12),dp(14),dp(12),dp(14));setOnClickListener{action()} }
     private fun add(v:android.view.View,top:Int=9){page.addView(v,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(top)})}
 
-    override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);window.statusBarColor=Color.BLACK;window.navigationBarColor=Color.BLACK;showPage()}
+    override fun onCreate(savedInstanceState:Bundle?){
+        super.onCreate(savedInstanceState)
+        window.statusBarColor=Color.BLACK
+        window.navigationBarColor=Color.BLACK
+        val prefs=getSharedPreferences("app_settings",MODE_PRIVATE)
+        if(prefs.getString("language_code",null).isNullOrBlank()) showLanguagePage() else showPage()
+    }
+
+    private fun showLanguagePage(){
+        page=LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL
+            gravity=Gravity.CENTER_HORIZONTAL
+            setPadding(dp(22),dp(28),dp(22),dp(28))
+            setBackgroundColor(black)
+        }
+        setContentView(ScrollView(this).apply{
+            isFillViewport=true
+            addView(page,android.view.ViewGroup.LayoutParams(-1,-1))
+        })
+        val head=LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL
+            gravity=Gravity.CENTER
+        }
+        head.addView(ImageView(this).apply{
+            setImageResource(R.mipmap.ic_launcher)
+            scaleType=ImageView.ScaleType.FIT_CENTER
+        },LinearLayout.LayoutParams(dp(76),dp(76)))
+        head.addView(txt("MS EDITOR MEDIA HUB",20f,Color.WHITE,true).apply{
+            gravity=Gravity.CENTER
+            setPadding(0,dp(10),0,0)
+        })
+        add(head,dp(18))
+        add(txt("SELECT LANGUAGE",21f,gold,true),dp(24))
+        add(txt("Choose your language to continue",15f,Color.LTGRAY),12)
+        val languageNames=listOf("English","اردو (Urdu)","हिन्दी (Hindi)","سنڌي (Sindhi)")
+        val languageCodes=listOf("en","ur","hi","sd")
+        val picker=Spinner(this).apply{
+            adapter=ArrayAdapter(this@AuthActivity,android.R.layout.simple_spinner_dropdown_item,languageNames)
+            background=bg(panel,green)
+        }
+        add(picker,18)
+        add(btn("CONTINUE",true){
+            val index=picker.selectedItemPosition.coerceIn(languageCodes.indices)
+            getSharedPreferences("app_settings",MODE_PRIVATE).edit()
+                .putString("language_code",languageCodes[index])
+                .putString("language_name",languageNames[index]).apply()
+            showPage()
+        },22)
+    }
+
     private fun showPage(){
         page=LinearLayout(this).apply{
             orientation=LinearLayout.VERTICAL

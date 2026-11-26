@@ -2654,6 +2654,7 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
             background = rounded(panel, emerald)
         }
         searchRow.addView(search, LinearLayout.LayoutParams(0, dp(50), 1f))
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val searchButton = actionButton("Search") { runUserSearch(token, uid, search.text.toString(), list) }
         searchButton.setPadding(dp(12), 0, dp(12), 0)
         searchRow.addView(searchButton, LinearLayout.LayoutParams(dp(92), dp(50)).apply { leftMargin = dp(8) })
@@ -2664,7 +2665,6 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
                 true
             } else false
         }
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val scroll = ScrollView(this).apply { addView(list); isFillViewport = true }
         page.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(10) })
         list.addView(text("Recent chats", 17f, gold, true).apply { setPadding(0, dp(8), 0, dp(10)) })

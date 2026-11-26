@@ -81,8 +81,15 @@ Deno.serve(async (req: Request) => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const publishableKeys = Deno.env.get("SUPABASE_PUBLISHABLE_KEYS");
+    const secretKeys = Deno.env.get("SUPABASE_SECRET_KEYS");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ??
+      Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
+      (publishableKeys ? JSON.parse(publishableKeys).default : "");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
+      Deno.env.get("SUPABASE_SECRET_KEY") ??
+      (secretKeys ? JSON.parse(secretKeys).default : "");
+    if (!anonKey || !serviceKey) throw new Error("Supabase Edge Function API keys are unavailable");
     const authHeader = req.headers.get("Authorization") ?? "";
     const userResponse = await fetch(supabaseUrl + "/auth/v1/user", {
       headers: { apikey: anonKey, Authorization: authHeader },

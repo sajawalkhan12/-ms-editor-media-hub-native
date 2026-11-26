@@ -30,6 +30,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
 
+import com.google.firebase.messaging.FirebaseMessaging
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -82,6 +83,8 @@ class MainActivity : Activity() {
     private var returnToUploadPostAfterImageEdit = false
     private var uploadCoverPreview: ImageView? = null
     private var selectedUploadUri: Uri? = null
+    private var chatRefreshRunnable: Runnable? = null
+    private var activeChatUserId: String = ""
     private var selectedPosterUri: Uri? = null
 
     private val categories = listOf(
@@ -95,7 +98,35 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         val language = getSharedPreferences("app_settings", MODE_PRIVATE).getString("language_code", "en").orEmpty()
         AppTranslator.configure(this, language)
+        requestPushNotificationPermission()
+        FirebaseMessaging.getInstance().token.addOnSuccessListener { PushTokenRegistrar.register(this, it) }
         showSplashScreen()
+    }
+
+    private fun requestPushNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7401)
+        }
+    }
+
+    private fun openChatFromNotification(source: Intent?) {
+        if (source?.action != "com.mseditor.mediahub.OPEN_MESSAGE_CHAT") return
+        val otherId = source.getStringExtra("open_chat_user_id").orEmpty()
+        val username = source.getStringExtra("open_chat_username").orEmpty()
+        val avatarUrl = source.getStringExtra("open_chat_avatar_url").orEmpty()
+        val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
+        val token = prefs.getString("access_token", "").orEmpty()
+        val uid = prefs.getString("user_id", "").orEmpty()
+        if (token.isNotBlank() && uid.isNotBlank() && otherId.isNotBlank()) {
+            openInboxChat(token, uid, otherId, username, avatarUrl)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openChatFromNotification(intent)
     }
 
     private fun showSplashScreen() {
@@ -137,7 +168,10 @@ class MainActivity : Activity() {
                 window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 val loggedIn = getSharedPreferences("auth_session", MODE_PRIVATE)
                     .getString("access_token", null).orEmpty().isNotBlank()
-                if (loggedIn) showHome() else {
+                if (loggedIn) {
+                    showHome()
+                    openChatFromNotification(intent)
+                } else {
                     startActivity(Intent(this, AuthActivity::class.java))
                     finish()
                 }
@@ -2595,49 +2629,283 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
     }
 
     private fun showInboxPage() {
-        val p = getSharedPreferences("auth_session", MODE_PRIVATE)
-        val token = p.getString("access_token", "").orEmpty(); val uid = p.getString("user_id", "").orEmpty()
-        if (token.isBlank() || uid.isBlank()) { startActivity(Intent(this, AuthActivity::class.java)); finish(); return }
-        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(16), dp(16), dp(12)); setBackgroundColor(black) }
+        chatRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
+        activeChatUserId = ""
+        val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
+        val token = prefs.getString("access_token", "").orEmpty()
+        val uid = prefs.getString("user_id", "").orEmpty()
+        if (token.isBlank() || uid.isBlank()) {
+            startActivity(Intent(this, AuthActivity::class.java)); finish(); return
+        }
+
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(12))
+            setBackgroundColor(black)
+        }
         page.addView(text("Inbox", 24f, emerald, true))
-        val search = EditText(this).apply { hint = "Search username..."; setSingleLine(); setTextColor(white); setHintTextColor(Color.LTGRAY); background = rounded(panel, emerald) }
-        page.addView(search, LinearLayout.LayoutParams(-1, dp(48)))
+        val searchRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val search = EditText(this).apply {
+            hint = "Search username..."
+            setSingleLine(true)
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+            setTextColor(white); setHintTextColor(Color.LTGRAY)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = rounded(panel, emerald)
+        }
+        searchRow.addView(search, LinearLayout.LayoutParams(0, dp(50), 1f))
+        val searchButton = actionButton("Search") { runUserSearch(token, uid, search.text.toString(), list) }
+        searchButton.setPadding(dp(12), 0, dp(12), 0)
+        searchRow.addView(searchButton, LinearLayout.LayoutParams(dp(92), dp(50)).apply { leftMargin = dp(8) })
+        page.addView(searchRow, LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(8) })
+        search.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
+                runUserSearch(token, uid, search.text.toString(), list)
+                true
+            } else false
+        }
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        page.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f))
-        page.addView(Button(this).apply { text = "Search"; isAllCaps = false; setOnClickListener {
-            list.removeAllViews()
-            SupabaseClient.searchInboxUsers(token, search.text.toString()) { result ->
-                list.removeAllViews()
-                result.onSuccess { users -> users.filter { it.id != uid }.forEach { user ->
-                    list.addView(text("@${user.username}", 16f, white, true).apply { setPadding(dp(12), dp(14), dp(12), dp(14)); background = rounded(panel, emerald); setOnClickListener { openInboxChat(token, uid, user.id, user.username) } })
-                }; if (users.isEmpty()) list.addView(text("User nahi mila.", 14f, Color.LTGRAY))
-                }.onFailure { list.addView(text("Search error: ${it.message}", 13f, Color.RED)) }
-            }
-        } }, LinearLayout.LayoutParams(-1, dp(44)))
+        val scroll = ScrollView(this).apply { addView(list); isFillViewport = true }
+        page.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(10) })
+        list.addView(text("Recent chats", 17f, gold, true).apply { setPadding(0, dp(8), 0, dp(10)) })
+        SupabaseClient.getInboxConversations(token, uid) { result ->
+            if (isFinishing || isDestroyed) return@getInboxConversations
+            result.onSuccess { conversations ->
+                if (conversations.isEmpty()) {
+                    list.addView(text("Abhi koi chat nahi. Username search karke message bhejein.", 13f, Color.LTGRAY).apply { setPadding(0, dp(8), 0, dp(8)) })
+                } else conversations.forEach { conversation ->
+                    addInboxUserRow(list, conversation.user, conversation.lastMessage) {
+                        openInboxChat(token, uid, conversation.user.id, conversation.user.username, conversation.user.avatarPath)
+                    }
+                }
+            }.onFailure { list.addView(text("Chats load nahi huin: ${it.message}", 13f, Color.RED)) }
+        }
         setContentView(page)
     }
 
-    private fun openInboxChat(token: String, uid: String, other: String, username: String) {
-        val messages = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply { addView(messages) }
-        val input = EditText(this).apply { hint = "Message..."; setTextColor(white); setHintTextColor(Color.LTGRAY) }
-        val dialog = android.app.AlertDialog.Builder(this).setTitle("@$username").setView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(scroll, LinearLayout.LayoutParams(-1, dp(260))); addView(input) }).setNegativeButton("Close", null).setPositiveButton("Send", null).create()
-        fun load() { SupabaseClient.getInboxMessages(token, uid, other) { result -> messages.removeAllViews(); result.onSuccess { rows -> rows.forEach { m -> messages.addView(text((if (m.senderId == uid) "You: " else "@$username: ") + m.message, 14f, white)) }; scroll.post { scroll.fullScroll(View.FOCUS_DOWN) } }.onFailure { messages.addView(text("Load error: ${it.message}", 13f, Color.RED)) } } }
-        dialog.setOnShowListener { dialog.getButton(-1).setOnClickListener { val msg = input.text.toString().trim(); if (msg.isBlank()) { input.error = "Message likhein"; return@setOnClickListener }; SupabaseClient.sendInboxMessage(token, uid, other, msg) { result -> result.onSuccess { input.text.clear(); load() }.onFailure { Toast.makeText(this, it.message, Toast.LENGTH_LONG).show() } } }; load() }
-        dialog.show()
+    private fun runUserSearch(token: String, uid: String, query: String, list: LinearLayout) {
+        if (query.trim().isBlank()) {
+            Toast.makeText(this, "Username likhein.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        list.removeAllViews()
+        list.addView(text("Search results", 17f, gold, true).apply { setPadding(0, dp(8), 0, dp(10)) })
+        SupabaseClient.searchInboxUsers(token, query) { result ->
+            if (isFinishing || isDestroyed) return@searchInboxUsers
+            list.removeAllViews()
+            result.onSuccess { users ->
+                val found = users.filter { it.id != uid }
+                if (found.isEmpty()) list.addView(text("User nahi mila.", 14f, Color.LTGRAY))
+                found.forEach { user ->
+                    addInboxUserRow(list, user, "Message start karein") {
+                        openInboxChat(token, uid, user.id, user.username, user.avatarPath)
+                    }
+                }
+            }.onFailure { list.addView(text("Search error: ${it.message}", 13f, Color.RED)) }
+        }
+    }
+
+    private fun addInboxUserRow(list: LinearLayout, user: SupabaseClient.InboxUser, preview: String, action: () -> Unit) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            background = rounded(panel, emerald)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { action() }
+        }
+        val photo = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(black); setStroke(dp(1), emerald) }
+            clipToOutline = true
+            contentDescription = "Profile photo ${user.username}"
+        }
+        row.addView(photo, LinearLayout.LayoutParams(dp(48), dp(48)))
+        if (user.avatarPath.isNotBlank()) loadProfileImage(photo, user.avatarPath)
+        val details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0) }
+        details.addView(text("@${user.username.removePrefix("@")}", 16f, white, true))
+        details.addView(text(preview.take(90), 12f, Color.LTGRAY).apply { setPadding(0, dp(3), 0, 0) })
+        row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+        list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+    }
+
+    private fun openInboxChat(token: String, uid: String, other: String, username: String, avatarPath: String = "") {
+        chatRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
+        activeChatUserId = other
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setBackgroundColor(black)
+        }
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        header.addView(actionButton("‹") { showInboxPage() }, LinearLayout.LayoutParams(dp(48), dp(46)))
+        val avatar = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(panel); setStroke(dp(1), emerald) }
+            clipToOutline = true
+            contentDescription = "Profile photo"
+        }
+        header.addView(avatar, LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(8) })
+        if (avatarPath.isNotBlank()) loadProfileImage(avatar, avatarPath)
+        header.addView(text("@${username.removePrefix("@")}", 18f, white, true).apply {
+            setPadding(dp(10), 0, 0, 0)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        page.addView(header, LinearLayout.LayoutParams(-1, dp(50)))
+        val messages = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), dp(8), dp(2), dp(8)) }
+        val scroll = ScrollView(this).apply { addView(messages); isFillViewport = true }
+        page.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(8) })
+
+        val composer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val input = EditText(this).apply {
+            hint = "Message..."
+            setTextColor(white); setHintTextColor(Color.LTGRAY)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = rounded(panel, emerald)
+            minLines = 1; maxLines = 4
+        }
+        composer.addView(input, LinearLayout.LayoutParams(0, dp(48), 1f))
+        val send = actionButton("Send") { }
+        composer.addView(send, LinearLayout.LayoutParams(dp(78), dp(48)).apply { leftMargin = dp(8) })
+        page.addView(composer, LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(8) })
+        setContentView(page)
+
+        var myUsername = "You"
+        var myAvatarPath = ""
+        SupabaseClient.getUserProfile(token, uid) { profileResult ->
+            profileResult.onSuccess { profile ->
+                myUsername = profile.username.ifBlank { "You" }
+                myAvatarPath = profile.avatarPath
+            }
+        }
+        fun loadMessages() {
+            SupabaseClient.getInboxMessages(token, uid, other) { result ->
+                if (isFinishing || isDestroyed || activeChatUserId != other) return@getInboxMessages
+                messages.removeAllViews()
+                result.onSuccess { rows ->
+                    rows.forEach { message ->
+                        val mine = message.senderId == uid
+                        val row = LinearLayout(this).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            gravity = if (mine) Gravity.END else Gravity.START
+                            setPadding(dp(2), dp(4), dp(2), dp(4))
+                        }
+                        val photo = ImageView(this).apply {
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+                            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(panel); setStroke(dp(1), emerald) }
+                            clipToOutline = true
+                        }
+                        val path = if (mine) myAvatarPath else avatarPath
+                        if (path.isNotBlank()) loadProfileImage(photo, path)
+                        val detail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(7), 0, dp(7), 0) }
+                        detail.addView(text("@${if (mine) myUsername else username.removePrefix("@")}", 11f, gold, true))
+                        detail.addView(text(message.message, 14f, white).apply {
+                            setPadding(dp(10), dp(8), dp(10), dp(8))
+                            background = rounded(if (mine) Color.rgb(0, 78, 74) else panel, emerald)
+                        })
+                        if (mine) {
+                            row.addView(detail, LinearLayout.LayoutParams(0, -2, 1f))
+                            row.addView(photo, LinearLayout.LayoutParams(dp(34), dp(34)))
+                        } else {
+                            row.addView(photo, LinearLayout.LayoutParams(dp(34), dp(34)))
+                            row.addView(detail, LinearLayout.LayoutParams(0, -2, 1f))
+                        }
+                        messages.addView(row, LinearLayout.LayoutParams(-1, -2))
+                    }
+                    scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+                }.onFailure { messages.addView(text("Messages load nahi huay: ${it.message}", 13f, Color.RED)) }
+            }
+        }
+        send.setOnClickListener {
+            val message = input.text.toString().trim()
+            if (message.isBlank()) { input.error = "Message likhein"; return@setOnClickListener }
+            send.isEnabled = false
+            SupabaseClient.sendInboxMessage(token, uid, other, message) { result ->
+                send.isEnabled = true
+                result.onSuccess { messageId ->
+                    input.text.clear()
+                    loadMessages()
+                    SupabaseClient.sendMessagePush(token, messageId) { pushResult ->
+                        pushResult.onFailure {
+                            Toast.makeText(this, "Message send ho gaya. Phone push ke liye Firebase service-account secret setup baqi hai.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }.onFailure { Toast.makeText(this, "Message send nahi hua: ${it.message}", Toast.LENGTH_LONG).show() }
+            }
+        }
+        loadMessages()
+        chatRefreshRunnable = Runnable {
+            if (activeChatUserId == other && !isFinishing && !isDestroyed) {
+                loadMessages()
+                mainHandler.postDelayed(chatRefreshRunnable!!, 3500L)
+            }
+        }
+        mainHandler.postDelayed(chatRefreshRunnable!!, 3500L)
     }
 
     private fun showNotificationsPage() {
-        val p = getSharedPreferences("auth_session", MODE_PRIVATE)
-        val token = p.getString("access_token", "").orEmpty(); val uid = p.getString("user_id", "").orEmpty()
-        if (token.isBlank() || uid.isBlank()) { startActivity(Intent(this, AuthActivity::class.java)); finish(); return }
-        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(16), dp(16), dp(12)); setBackgroundColor(black) }
+        chatRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
+        activeChatUserId = ""
+        val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
+        val token = prefs.getString("access_token", "").orEmpty()
+        val uid = prefs.getString("user_id", "").orEmpty()
+        if (token.isBlank() || uid.isBlank()) {
+            startActivity(Intent(this, AuthActivity::class.java)); finish(); return
+        }
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(12))
+            setBackgroundColor(black)
+        }
         page.addView(text("Notifications", 24f, emerald, true))
-        val filter = Spinner(this); filter.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("All notifications", "Post", "Message", "Login")); page.addView(filter)
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; page.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f))
-        fun load() { SupabaseClient.getInboxNotifications(token, uid) { result -> list.removeAllViews(); result.onSuccess { rows -> val type = when(filter.selectedItemPosition) { 1 -> "post"; 2 -> "message"; 3 -> "login"; else -> "" }; val shown = rows.filter { type.isBlank() || it.type == type }; shown.forEach { n -> list.addView(text("${n.title}\n${n.body}", 14f, white).apply { setPadding(dp(10), dp(10), dp(10), dp(10)); background = rounded(panel, emerald) }) }; if (list.childCount == 0) list.addView(text("No notifications.", 14f, Color.LTGRAY)) }.onFailure { list.addView(text("Error: ${it.message}", 13f, Color.RED)) } } }
-        filter.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener { override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {} ; override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) { load() } }
-        setContentView(page); load()
+        val filter = Spinner(this)
+        filter.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("All notifications", "Post", "Message", "Login"))
+        page.addView(filter, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        page.addView(ScrollView(this).apply { addView(list); isFillViewport = true }, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(10) })
+        fun load() {
+            SupabaseClient.getInboxNotifications(token, uid) { result ->
+                if (isFinishing || isDestroyed) return@getInboxNotifications
+                list.removeAllViews()
+                result.onSuccess { rows ->
+                    val type = when (filter.selectedItemPosition) { 1 -> "post"; 2 -> "message"; 3 -> "login"; else -> "" }
+                    val shown = rows.filter { type.isBlank() || it.type == type }
+                    if (shown.isEmpty()) list.addView(text("No notifications.", 14f, Color.LTGRAY))
+                    shown.forEach { n ->
+                        val row = LinearLayout(this).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            gravity = Gravity.CENTER_VERTICAL
+                            setPadding(dp(10), dp(10), dp(10), dp(10))
+                            background = rounded(panel, emerald)
+                            setOnClickListener {
+                                if (n.type == "message" && n.actorId.isNotBlank()) {
+                                    openInboxChat(token, uid, n.actorId, n.actorUsername.ifBlank { "user" }, n.actorAvatarPath)
+                                }
+                            }
+                        }
+                        val photo = ImageView(this).apply {
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+                            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(black); setStroke(dp(1), emerald) }
+                            clipToOutline = true
+                        }
+                        row.addView(photo, LinearLayout.LayoutParams(dp(42), dp(42)))
+                        if (n.actorAvatarPath.isNotBlank()) loadProfileImage(photo, n.actorAvatarPath)
+                        val details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10), 0, 0, 0) }
+                        details.addView(text("@${n.actorUsername.ifBlank { n.title }}", 14f, white, true))
+                        details.addView(text(n.body, 13f, Color.LTGRAY).apply { setPadding(0, dp(3), 0, 0) })
+                        row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+                        list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+                    }
+                    SupabaseClient.markInboxNotificationsRead(token, uid) { }
+                }.onFailure { list.addView(text("Error: ${it.message}", 13f, Color.RED)) }
+            }
+        }
+        filter.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) { load() }
+        }
+        setContentView(page)
+        load()
     }
     override fun onDestroy() {
         releaseMediaPlayers()
@@ -2647,6 +2915,6 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        showHome()
+        if (activeChatUserId.isNotBlank()) showInboxPage() else showHome()
     }
 }

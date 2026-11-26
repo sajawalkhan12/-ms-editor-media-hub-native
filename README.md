@@ -5,12 +5,9 @@ This is a native Kotlin Android app (not a WebView wrapper) using the existing S
 ## Verified existing categories
 - Home (all media)
 - Video Songs (`song`)
-- Video Tutorial (`tutorial`)
 - Video Prompt (`video_prompt`)
 - Image Prompt (`image_prompt`)
-- Presets & Assets (`assets`)
 
-`Tutorials` is an existing shortcut to the `tutorial` category, not a separate database category.
 
 ## Safety and current scope
 - Uses the existing Supabase URL, publishable key, `media` bucket, and `media_items` table.

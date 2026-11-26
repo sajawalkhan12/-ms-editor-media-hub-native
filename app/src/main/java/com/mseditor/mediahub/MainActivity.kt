@@ -1010,17 +1010,45 @@ class MainActivity : Activity() {
             }
             showMediaItems(visible)
         }
+        page.addView(text("UPLOAD POST FORM", 15f, emerald, true).apply {
+            setPadding(dp(8), dp(16), dp(8), dp(6))
+        })
+        val uploadPostCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = rounded(panel, gold)
+        }
+        uploadPostCard.addView(text("Create and upload a new post", 13f, Color.LTGRAY).apply {
+            setPadding(0, 0, 0, dp(8))
+        })
+        uploadPostCard.addView(actionButton("＋  Open Upload Post Form") {
+            showUserUploadPostPage()
+        }, LinearLayout.LayoutParams(-1, dp(46)))
+        page.addView(uploadPostCard, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(4)
+        })
+
+        page.addView(text("MY POSTS", 15f, emerald, true).apply {
+            setPadding(dp(8), dp(16), dp(8), dp(6))
+        })
+        val postFilters = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(2), 0, dp(8))
+        }
         fun profileOption(label: String, filter: String) {
-            page.addView(actionButton(label) {
+            val button = actionButton(label) {
                 currentPostFilter = filter
                 renderProfilePosts()
-            }, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(7) })
+            }
+            postFilters.addView(button, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                setMargins(dp(3), dp(2), dp(3), dp(2))
+            })
         }
-        profileOption("＋  New Post", "new")
-        profileOption("▦  Old Post", "old")
-        profileOption("🔒  Private Post", "private")
-        page.addView(actionButton("⬆  Upload Post mein jao") { showUserUploadPostPage() },
-            LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(7) })
+        profileOption("New Posts", "new")
+        profileOption("Old Posts", "old")
+        profileOption("Private Posts", "private")
+        page.addView(postFilters, LinearLayout.LayoutParams(-1, -2))
         page.addView(postsContainer, LinearLayout.LayoutParams(-1, -2))
 
         setContentView(ScrollView(this).apply { isFillViewport = true; setBackgroundColor(black); addView(page) })

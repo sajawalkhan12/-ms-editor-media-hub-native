@@ -1110,7 +1110,8 @@ object SupabaseClient {
 
     data class InboxUser(val id: String, val username: String, val displayName: String, val avatarPath: String)
     data class InboxMessage(val id: String, val senderId: String, val recipientId: String, val message: String, val createdAt: String, val readAt: String)
-    data class UserNotification(val id: String, val type: String, val title: String, val body: String, val createdAt: String, val readAt: String)
+    data class InboxConversation(val user: InboxUser, val lastMessage: String, val createdAt: String)
+    data class UserNotification(val id: String, val type: String, val title: String, val body: String, val createdAt: String, val readAt: String, val actorId: String = "", val actorUsername: String = "", val actorAvatarPath: String = "", val relatedId: String = "")
 
     fun searchInboxUsers(token: String, username: String, callback: (Result<List<InboxUser>>) -> Unit) {
         executor.execute {
@@ -1142,13 +1143,67 @@ object SupabaseClient {
         }
     }
 
-    fun sendInboxMessage(token: String, senderId: String, recipientId: String, message: String, callback: (Result<Unit>) -> Unit) {
+    fun getInboxConversations(token: String, userId: String, callback: (Result<List<InboxConversation>>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val uid = URLEncoder.encode(userId, "UTF-8")
+                val rows = JSONArray(profileRequest(token, "GET", "messages?select=id,sender_id,recipient_id,message,created_at&or=(sender_id.eq.$uid,recipient_id.eq.$uid)&order=created_at.desc&limit=100"))
+                val latest = linkedMapOf<String, JSONObject>()
+                for (i in 0 until rows.length()) {
+                    val row = rows.getJSONObject(i)
+                    val otherId = if (row.optString("sender_id") == userId) row.optString("recipient_id") else row.optString("sender_id")
+                    if (otherId.isNotBlank() && !latest.containsKey(otherId)) latest[otherId] = row
+                }
+                if (latest.isEmpty()) emptyList() else {
+                    val ids = latest.keys.joinToString(",")
+                    val profiles = JSONArray(profileRequest(token, "GET", "profiles?select=id,username,display_name,avatar_path&id=in.($ids)"))
+                    val profileMap = mutableMapOf<String, InboxUser>()
+                    for (i in 0 until profiles.length()) {
+                        val row = profiles.getJSONObject(i)
+                        profileMap[row.optString("id")] = InboxUser(row.optString("id"), row.optString("username"), row.optString("display_name"), row.optString("avatar_path"))
+                    }
+                    latest.mapNotNull { (otherId, message) ->
+                        profileMap[otherId]?.let { InboxConversation(it, message.optString("message"), message.optString("created_at")) }
+                    }
+                }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun sendInboxMessage(token: String, senderId: String, recipientId: String, message: String, callback: (Result<String>) -> Unit) {
         executor.execute {
             val result = runCatching {
                 require(message.trim().isNotEmpty()) { "Message likhein." }
                 val body = JSONObject().put("sender_id", senderId).put("recipient_id", recipientId).put("message", message.trim().take(4000)).toString()
-                profileRequest(token, "POST", "messages", body, prefer = "return=minimal")
-                Unit
+                val response = profileRequest(token, "POST", "messages", body, prefer = "return=representation")
+                val rows = JSONArray(response)
+                require(rows.length() > 0) { "Message save hua lekin ID return nahi hui." }
+                rows.getJSONObject(0).optString("id").also { require(it.isNotBlank()) }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun sendMessagePush(token: String, messageId: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val endpoint = SupabaseConfig.SUPABASE_URL.trimEnd('/') + "/functions/v1/send-message-push"
+                val connection = URL(endpoint).openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 20000
+                    connection.readTimeout = 30000
+                    connection.doOutput = true
+                    connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    connection.setRequestProperty("Authorization", "Bearer $token")
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use { it.write(JSONObject().put("message_id", messageId).toString().toByteArray(Charsets.UTF_8)) }
+                    val code = connection.responseCode
+                    val response = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Push notification HTTP $code: $response")
+                    Unit
+                } finally { connection.disconnect() }
             }
             mainHandler.post { callback(result) }
         }
@@ -1158,10 +1213,19 @@ object SupabaseClient {
         executor.execute {
             val result = runCatching {
                 val uid = URLEncoder.encode(userId, "UTF-8")
-                val rows = JSONArray(profileRequest(token, "GET", "notifications?select=id,notification_type,title,body,created_at,read_at&user_id=eq.$uid&order=created_at.desc&limit=300"))
+                val rows = JSONArray(profileRequest(token, "GET", "notifications?select=id,actor_id,notification_type,title,body,related_id,created_at,read_at&user_id=eq.$uid&order=created_at.desc&limit=300"))
+                val actorIds = (0 until rows.length()).map { rows.getJSONObject(it).optString("actor_id") }.filter { it.isNotBlank() }.distinct()
+                val profiles = if (actorIds.isEmpty()) JSONArray() else JSONArray(profileRequest(token, "GET", "profiles?select=id,username,avatar_path&id=in.(${actorIds.joinToString(",")})"))
+                val profileMap = mutableMapOf<String, Pair<String, String>>()
+                for (i in 0 until profiles.length()) {
+                    val row = profiles.getJSONObject(i)
+                    profileMap[row.optString("id")] = row.optString("username") to row.optString("avatar_path")
+                }
                 (0 until rows.length()).map { i ->
                     val row = rows.getJSONObject(i)
-                    UserNotification(row.optString("id"), row.optString("notification_type"), row.optString("title"), row.optString("body"), row.optString("created_at"), row.optString("read_at"))
+                    val actorId = row.optString("actor_id")
+                    val actor = profileMap[actorId] ?: ("" to "")
+                    UserNotification(row.optString("id"), row.optString("notification_type"), row.optString("title"), row.optString("body"), row.optString("created_at"), row.optString("read_at"), actorId, actor.first, actor.second, row.optString("related_id"))
                 }
             }
             mainHandler.post { callback(result) }

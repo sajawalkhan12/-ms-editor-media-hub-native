@@ -1143,6 +1143,39 @@ object SupabaseClient {
         }
     }
 
+    fun markInboxMessagesRead(token: String, userId: String, otherId: String, callback: (Result<Unit>) -> Unit = {}) {
+        executor.execute {
+            val result = runCatching {
+                val uid = URLEncoder.encode(userId, "UTF-8")
+                val other = URLEncoder.encode(otherId, "UTF-8")
+                val body = JSONObject().put("read_at", java.time.Instant.now().toString()).toString()
+                profileRequest(token, "PATCH", "messages?sender_id=eq.$other&recipient_id=eq.$uid&read_at=is.null", body, prefer = "return=minimal")
+                Unit
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun getUnreadMessageCount(token: String, userId: String, callback: (Result<Int>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val uid = URLEncoder.encode(userId, "UTF-8")
+                JSONArray(profileRequest(token, "GET", "messages?select=id&recipient_id=eq.$uid&read_at=is.null&limit=1000")).length()
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun getUnreadNotificationCount(token: String, userId: String, callback: (Result<Int>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val uid = URLEncoder.encode(userId, "UTF-8")
+                JSONArray(profileRequest(token, "GET", "notifications?select=id&user_id=eq.$uid&read_at=is.null&limit=1000")).length()
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
     fun getInboxConversations(token: String, userId: String, callback: (Result<List<InboxConversation>>) -> Unit) {
         executor.execute {
             val result = runCatching {

@@ -28,7 +28,7 @@ object AppTranslator {
 
     fun configure(context: Context, requestedCode: String) {
         val targetCode = normalizeCode(requestedCode)
-        if (targetCode == languageCode && (targetCode == "en" || translator != null)) return
+        if (targetCode == languageCode && (targetCode == "en" || modelReady || loading)) return
         translator?.close()
         translator = null
         modelReady = false

@@ -999,6 +999,23 @@ class MainActivity : Activity() {
         stats.addView(followingStat, LinearLayout.LayoutParams(0, -2, 1f))
         page.addView(stats)
 
+        val profileScroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(black)
+            addView(page)
+        }
+        postsStat.setOnClickListener {
+            currentPostFilter = "new"
+            renderProfilePosts()
+            profileScroll.post { profileScroll.smoothScrollTo(0, postsContainer.top) }
+        }
+        followersStat.setOnClickListener {
+            showFollowUsersPage(profileAccessToken, profileUserId, true)
+        }
+        followingStat.setOnClickListener {
+            showFollowUsersPage(profileAccessToken, profileUserId, false)
+        }
+
         postsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         var memberPosts = emptyList<MediaItem>()
         var currentPostFilter = "new"
@@ -1051,7 +1068,7 @@ class MainActivity : Activity() {
         page.addView(postFilters, LinearLayout.LayoutParams(-1, -2))
         page.addView(postsContainer, LinearLayout.LayoutParams(-1, -2))
 
-        setContentView(ScrollView(this).apply { isFillViewport = true; setBackgroundColor(black); addView(page) })
+        setContentView(profileScroll)
         SupabaseClient.getMediaItems(profileAccessToken) { mediaResult ->
             if (!isFinishing && !isDestroyed) mediaResult.onSuccess { items ->
                 allMediaItems = items
@@ -1099,7 +1116,129 @@ class MainActivity : Activity() {
         }
     }
 
-private fun openProfileImagePicker(requestCode: Int) {
+private fun showFollowUsersPage(token: String, userId: String, showFollowers: Boolean) {
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(24))
+            setBackgroundColor(black)
+        }
+        page.addView(actionButton("‹ Back to Profile") { showProfilePage() }, LinearLayout.LayoutParams(-1, dp(44)))
+        page.addView(text(if (showFollowers) "FOLLOWERS" else "FOLLOWING", 20f, gold, true).apply {
+            setPadding(dp(4), dp(16), dp(4), dp(10))
+        })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        page.addView(list, LinearLayout.LayoutParams(-1, -2))
+        setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
+        list.addView(text("Loading list...", 13f, Color.LTGRAY))
+        SupabaseClient.getFollowUsers(token, userId, showFollowers) { result ->
+            if (isFinishing || isDestroyed) return@getFollowUsers
+            list.removeAllViews()
+            result.onSuccess { users ->
+                if (users.isEmpty()) {
+                    list.addView(text(if (showFollowers) "Abhi koi follower nahi hai." else "Aap abhi kisi ko follow nahi kar rahe.", 14f, Color.LTGRAY))
+                } else users.forEach { user ->
+                    val row = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(10), dp(10), dp(10), dp(10))
+                        background = rounded(panel, emerald)
+                        isClickable = true
+                        setOnClickListener { showOtherUserProfile(user.id) }
+                    }
+                    val photo = ImageView(this).apply {
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(black); setStroke(dp(1), emerald) }
+                        clipToOutline = true
+                        contentDescription = "User profile photo"
+                    }
+                    row.addView(photo, LinearLayout.LayoutParams(dp(48), dp(48)))
+                    if (user.avatarPath.isNotBlank()) loadProfileImage(photo, user.avatarPath)
+                    val details = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(10), 0, 0, 0)
+                    }
+                    details.addView(text(user.displayName.ifBlank { user.username.ifBlank { "User" } }, 15f, white, true))
+                    details.addView(text("@"+user.username.removePrefix("@"), 12f, Color.LTGRAY))
+                    row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+                    list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+                }
+            }.onFailure { error ->
+                list.addView(text("List load nahi hui: ${error.message}", 13f, Color.RED))
+            }
+        }
+    }
+
+    private fun showOtherUserProfile(userId: String) {
+        if (userId.isBlank()) return
+        if (userId == profileUserId) { showProfilePage(); return }
+        val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
+        val token = prefs.getString("access_token", "").orEmpty()
+        if (token.isBlank()) { startActivity(Intent(this, AuthActivity::class.java)); finish(); return }
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(24))
+            setBackgroundColor(black)
+        }
+        page.addView(actionButton("‹ Back") { showProfilePage() }, LinearLayout.LayoutParams(-1, dp(44)))
+        val cover = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(panel) }
+        page.addView(cover, LinearLayout.LayoutParams(-1, dp(140)).apply { topMargin = dp(8) })
+        val avatar = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(panel); setStroke(dp(2), emerald) }
+            clipToOutline = true
+        }
+        page.addView(avatar, LinearLayout.LayoutParams(dp(82), dp(82)).apply { topMargin = dp(10) })
+        val name = text("Loading profile...", 19f, white, true)
+        val handle = text("", 13f, Color.LTGRAY)
+        val bio = text("", 13f, Color.LTGRAY)
+        page.addView(name); page.addView(handle); page.addView(bio)
+        val follow = actionButton("Follow") { }
+        follow.isEnabled = false
+        page.addView(follow, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(10) })
+        page.addView(text("POSTS", 16f, gold, true).apply { setPadding(0, dp(16), 0, dp(8)) })
+        postsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        page.addView(postsContainer, LinearLayout.LayoutParams(-1, -2))
+        setContentView(ScrollView(this).apply { setBackgroundColor(black); addView(page) })
+        SupabaseClient.getUserProfile(token, userId) { result ->
+            if (isFinishing || isDestroyed) return@getUserProfile
+            result.onSuccess { profile ->
+                name.text = profile.displayName.ifBlank { "User" }
+                handle.text = "@"+profile.username.removePrefix("@")
+                bio.text = listOf(profile.bio, profile.location).filter { it.isNotBlank() }.joinToString("\n")
+                loadProfileImage(cover, profile.coverPath)
+                loadProfileImage(avatar, profile.avatarPath)
+                var following = false
+                SupabaseClient.isFollowing(token, profileUserId, userId) { value ->
+                    following = value
+                    follow.text = if (value) "Following" else "Follow"
+                    follow.isEnabled = true
+                }
+                follow.setOnClickListener {
+                    follow.isEnabled = false
+                    SupabaseClient.toggleFollow(token, profileUserId, userId, following) { changed ->
+                        if (isFinishing || isDestroyed) return@toggleFollow
+                        changed.onSuccess { value ->
+                            following = value
+                            follow.text = if (value) "Following" else "Follow"
+                        }.onFailure { error ->
+                            Toast.makeText(this, "Follow update nahi hua: ${error.message}", Toast.LENGTH_LONG).show()
+                        }
+                        follow.isEnabled = true
+                    }
+                }
+            }.onFailure { error -> name.text = "Profile load nahi hui: ${error.message}" }
+        }
+        SupabaseClient.getMediaItems(token) { result ->
+            if (isFinishing || isDestroyed) return@getMediaItems
+            result.onSuccess { items ->
+                val userPosts = items.filter { it.createdBy == userId && it.visibility == "public" &&
+                    (it.storagePath.startsWith("user-posts/") || it.externalUrl.isNotBlank()) }
+                showMediaItems(userPosts)
+            }.onFailure { error -> postsContainer.addView(text("Posts load nahi hui: ${error.message}", 13f, Color.RED)) }
+        }
+    }
+
+    private fun openProfileImagePicker(requestCode: Int) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "image/*"
@@ -1508,6 +1647,9 @@ private fun openProfileImagePicker(requestCode: Int) {
                     contentDescription = "Post owner profile photo"
                 }
                 authorRow.addView(authorAvatar, LinearLayout.LayoutParams(dp(42), dp(42)))
+                authorAvatar.setOnClickListener {
+                    if (item.createdBy.isNotBlank()) showOtherUserProfile(item.createdBy)
+                }
                 if (item.profileAvatarPath.isNotBlank()) loadProfileImage(authorAvatar, item.profileAvatarPath)
                 else authorAvatar.setImageResource(android.R.drawable.ic_menu_myplaces)
                 val authorName = item.profileDisplayName.trim().ifBlank {

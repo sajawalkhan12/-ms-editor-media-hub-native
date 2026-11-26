@@ -952,6 +952,7 @@ class MainActivity : Activity() {
     private fun logoutUser() {
         val token = getSharedPreferences("auth_session", MODE_PRIVATE)
             .getString("access_token", "").orEmpty()
+        FirebaseMessaging.getInstance().token.addOnSuccessListener { PushTokenRegistrar.unregister(this, it) }
         imageExecutor.execute {
             try {
                 if (token.isNotBlank()) {

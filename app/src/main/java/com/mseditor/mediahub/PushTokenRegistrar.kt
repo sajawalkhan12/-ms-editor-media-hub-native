@@ -11,6 +11,33 @@ import java.util.concurrent.Executors
 object PushTokenRegistrar {
     private val executor = Executors.newSingleThreadExecutor()
 
+    fun unregister(context: Context, fcmToken: String) {
+        if (fcmToken.isBlank()) return
+        val prefs = context.getSharedPreferences("auth_session", Context.MODE_PRIVATE)
+        val accessToken = prefs.getString("access_token", "").orEmpty()
+        val userId = prefs.getString("user_id", "").orEmpty()
+        if (accessToken.isBlank() || userId.isBlank()) return
+        executor.execute {
+            runCatching {
+                val tokenQuery = java.net.URLEncoder.encode(fcmToken, "UTF-8")
+                val userQuery = java.net.URLEncoder.encode(userId, "UTF-8")
+                val endpoint = SupabaseConfig.SUPABASE_URL.trimEnd('/') +
+                    "/rest/v1/user_push_tokens?fcm_token=eq.$tokenQuery&user_id=eq.$userQuery"
+                val connection = URL(endpoint).openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "DELETE"
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    connection.setRequestProperty("Authorization", "Bearer $accessToken")
+                    connection.setRequestProperty("Prefer", "return=minimal")
+                    val code = connection.responseCode
+                    if (code !in 200..299) Log.w("PushTokenRegistrar", "Token removal HTTP $code")
+                } finally { connection.disconnect() }
+            }.onFailure { Log.w("PushTokenRegistrar", "Token removal failed", it) }
+        }
+    }
+
     fun register(context: Context, fcmToken: String) {
         if (fcmToken.isBlank()) return
         val prefs = context.getSharedPreferences("auth_session", Context.MODE_PRIVATE)

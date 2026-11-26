@@ -87,10 +87,8 @@ class MainActivity : Activity() {
     private val categories = listOf(
         "Home",
         "Video Songs",
-        "Video Tutorial",
         "Video Prompt",
-        "Image Prompt",
-        "Presets & Assets"
+        "Image Prompt"
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -284,7 +282,7 @@ class MainActivity : Activity() {
         })
         brandRow.addView(brandTitle, LinearLayout.LayoutParams(0, -2, 1f))
         brand.addView(brandRow)
-        brand.addView(text("Video Songs • Tutorials • Prompts", 12f, gold))
+        brand.addView(text("Video Songs • Prompts", 12f, gold))
         // Hidden admin access: tap the brand header 7 times within 2.5 seconds.
         brandRow.setOnClickListener {
             hiddenAdminTapCount++
@@ -395,11 +393,10 @@ class MainActivity : Activity() {
             setPadding(2, dp(8), 2, dp(8))
         }
 
-        // Bottom navigation: replace Assets with a direct User Profile shortcut.
+        // Bottom navigation keeps only the active categories and User Profile.
         val bottomItems = listOf(
             "⌂\nHome",
             "♫\nVideo Songs",
-            "▷\nVideo Tutorial",
             "✧\nVideo Prompt",
             "▧\nImage Prompt",
             "♙\nUser Profile"
@@ -646,11 +643,11 @@ class MainActivity : Activity() {
         }
         val category = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
-                listOf("Video Songs", "Video Tutorial", "Video Prompt", "Image Prompt", "Presets & Assets"))
+                listOf("Video Songs", "Video Prompt", "Image Prompt"))
             onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                    promptField.visibility = if (position == 2 || position == 3) View.VISIBLE else View.GONE
-                    promptField.hint = if (position == 2) "Video Prompt" else "Image Prompt"
+                    promptField.visibility = if (position == 1 || position == 2) View.VISIBLE else View.GONE
+                    promptField.hint = if (position == 1) "Video Prompt" else "Image Prompt"
                 }
                 override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
             }
@@ -690,10 +687,8 @@ class MainActivity : Activity() {
             if (titleValue.isBlank()) { titleField.error = "Title zaroori hai"; return@actionButton }
             val mediaType = when (category.selectedItemPosition) {
                 0 -> "video_songs"
-                1 -> "video_tutorial"
-                2 -> "video_prompt"
-                3 -> "image_prompt"
-                else -> "presets_assets"
+                1 -> "video_prompt"
+                else -> "image_prompt"
             }
             val promptValue = promptField.text.toString().trim()
             if ((mediaType == "video_prompt" || mediaType == "image_prompt") && promptValue.isBlank()) {

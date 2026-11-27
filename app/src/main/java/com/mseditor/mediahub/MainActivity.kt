@@ -554,26 +554,50 @@ class MainActivity : Activity() {
     }
 
     private fun showNavigationMenu() {
-        val menu = LinearLayout(this).apply {
+        val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(12), dp(18), dp(12))
+            setBackgroundColor(black)
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
             setBackgroundColor(panel)
         }
+        header.addView(actionButton("← Back Home") { showHome() }, LinearLayout.LayoutParams(dp(118), dp(44)))
+        header.addView(text("Settings", 22f, emerald, true).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), 0, 0, 0)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        page.addView(header, LinearLayout.LayoutParams(-1, -2))
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(24))
+        }
         fun section(title: String) {
-            menu.addView(text(title, 13f, gold, true).apply {
-                setPadding(0, dp(12), 0, dp(5))
+            content.addView(text(title, 13f, gold, true).apply {
+                setPadding(dp(2), dp(14), 0, dp(7))
             })
         }
-        fun item(label: String, action: () -> Unit) {
-            val row = text(label, 16f, white, true).apply {
-                setPadding(dp(12), dp(12), dp(12), dp(12))
-                background = rounded(black)
+        fun item(label: String, subtitle: String = "", action: () -> Unit) {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                background = rounded(panel, emerald)
+                isClickable = true
+                isFocusable = true
                 setOnClickListener { action() }
             }
-            val params = LinearLayout.LayoutParams(-1, -2)
-            params.setMargins(0, dp(3), 0, dp(3))
-            menu.addView(row, params)
+            card.addView(text(label, 16f, white, true))
+            if (subtitle.isNotBlank()) card.addView(text(subtitle, 12f, gray, false).apply {
+                setPadding(0, dp(4), 0, 0)
+            })
+            content.addView(card, LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(8)
+            })
         }
+
         section("CATEGORIES")
         categories.forEach { category ->
             item(category) {
@@ -593,18 +617,58 @@ class MainActivity : Activity() {
             item("Cover Image & Logo") { openAdminWebsite("Admin appearance settings") }
             item("Upload Media") { showUploadForm() }
         }
-        section("ACCOUNT")
-        item("🌐 MS Editor Media Hub") { openAdminWebsite("MS Editor Media Hub") }
-        section("APP")
-        item("Change Language") { showLanguageSettings() }
-        item("Back to Home") { showHome() }
-        item("Exit App") { finish() }
-        val scroll = ScrollView(this).apply { addView(menu) }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Navigation")
-            .setView(scroll)
-            .setNegativeButton("Close", null)
-            .show()
+        section("APP SETTINGS")
+        item("Change Language", "App ki display language") { showLanguageSettings() }
+        item("Privacy Policy", "App data aur privacy information") { showPolicyPage() }
+        item("About MS Editor Media Hub", "App version aur information") { showAboutPage() }
+        item("Back to Home", "Home screen par wapas jayein") { showHome() }
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(content)
+        }
+        page.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        setContentView(page)
+    }
+
+    private fun showAboutPage() {
+        showInfoPage("About MS Editor Media Hub",
+            "MS Editor Media Hub\\n\\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\\n\\nPackage: ${packageName}\\n\\nThis app provides media browsing, user profiles, posts, comments, messaging and notification features.")
+    }
+
+    private fun showPolicyPage() {
+        showInfoPage("Privacy Policy",
+            "MS Editor Media Hub — Privacy & Data Summary\\n\\nAccount and profile: The app uses account information such as email, username and profile details to provide sign-in and user profiles.\\n\\nUser content: Posts, uploaded media, comments, likes, follows and messages are processed to provide the app's social and media features.\\n\\nStorage and services: App account and content data are handled through the connected Supabase project. Push notifications use Firebase Cloud Messaging and registered device tokens.\\n\\nNotifications: You can disable app notifications from your Android phone's Settings.\\n\\nSafety: Do not share passwords or sensitive personal information in public posts or messages.\\n\\nThis is a concise in-app privacy summary. The exact previously approved/published policy text or its official URL was not found in the available project files; it should be inserted here once supplied so this screen matches the approved policy.")
+    }
+
+    private fun showInfoPage(title: String, body: String) {
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(black)
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            setBackgroundColor(panel)
+        }
+        header.addView(actionButton("← Back") { showNavigationMenu() }, LinearLayout.LayoutParams(dp(92), dp(44)))
+        header.addView(text(title, 19f, emerald, true).apply {
+            setPadding(dp(12), 0, 0, 0)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        page.addView(header, LinearLayout.LayoutParams(-1, -2))
+        val bodyView = text(body, 16f, white).apply {
+            setPadding(dp(20), dp(20), dp(20), dp(28))
+            setLineSpacing(dp(5).toFloat(), 1f)
+        }
+        page.addView(ScrollView(this).apply {
+            isFillViewport = true
+            addView(bodyView)
+        }, LinearLayout.LayoutParams(-1, 0, 1f))
+        page.addView(actionButton("Back to Home") { showHome() }, LinearLayout.LayoutParams(-1, dp(52)).apply {
+            setMargins(dp(16), dp(8), dp(16), dp(16))
+        })
+        setContentView(page)
     }
 
     private fun showLanguageSettings() {

@@ -202,6 +202,24 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun enableKeyboardWhenFocused(editText: EditText) {
+        editText.isFocusable = true
+        editText.isFocusableInTouchMode = true
+        editText.setOnFocusChangeListener { view, hasFocus ->
+            if (hasFocus) view.post {
+                getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+                    .showSoftInput(view, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            }
+        }
+        editText.setOnClickListener {
+            editText.requestFocus()
+            editText.post {
+                getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+                    .showSoftInput(editText, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            }
+        }
+    }
+
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
 
@@ -672,26 +690,31 @@ class MainActivity : Activity() {
             hint = "Admin email"
             setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            isFocusable = true
+            isFocusableInTouchMode = true
             setTextColor(white)
             setHintTextColor(Color.LTGRAY)
             setPadding(dp(14), dp(13), dp(14), dp(13))
             background = rounded(panel, emerald)
-        }
+        }.also { enableKeyboardWhenFocused(it) }
         val password = EditText(this).apply {
             hint = "Password"
             setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            isFocusable = true
+            isFocusableInTouchMode = true
             setTextColor(white)
             setHintTextColor(Color.LTGRAY)
             setPadding(dp(14), dp(13), dp(14), dp(13))
             background = rounded(panel, emerald)
-        }
+        }.also { enableKeyboardWhenFocused(it) }
         page.addView(email, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(24) })
         page.addView(password, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
         val login = actionButton("ADMIN LOGIN") { }
         page.addView(login, LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(20) })
         page.addView(actionButton("Back to Home") { showHome() },
             LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         setContentView(ScrollView(this).apply {
             isFillViewport = true
             addView(page)
@@ -2696,9 +2719,13 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
             hint = "Comment likhein..."
             setTextColor(white); setHintTextColor(Color.LTGRAY)
             minLines = 2; maxLines = 4
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            isFocusable = true
+            isFocusableInTouchMode = true
             background = rounded(panel, emerald)
             setPadding(dp(12), dp(8), dp(12), dp(8))
         }
+        enableKeyboardWhenFocused(commentField)
         page.addView(commentField, LinearLayout.LayoutParams(-1, dp(70)).apply { topMargin = dp(8) })
         val postComment = actionButton("Post Comment") { }
         page.addView(postComment, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
@@ -2744,7 +2771,12 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
         }
         postComment.setOnClickListener {
             val commentText = commentField.text.toString().trim()
-            if (commentText.isBlank()) { commentField.error = "Comment likhein"; return@setOnClickListener }
+            if (commentText.isBlank()) {
+                commentField.requestFocus()
+                commentField.post { getSystemService(android.view.inputmethod.InputMethodManager::class.java).showSoftInput(commentField, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT) }
+                Toast.makeText(this, "Comment likhein.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             if (token.isBlank() || userId.isBlank()) {
                 Toast.makeText(this, "Comment karne ke liye pehle Login karein.", Toast.LENGTH_LONG).show()
                 startActivity(Intent(this, AuthActivity::class.java))

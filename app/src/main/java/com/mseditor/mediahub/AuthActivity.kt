@@ -346,87 +346,107 @@ class AuthActivity : Activity() {
         },22)
     }
 
-    private fun showPage(){
-        page=LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL
-            gravity=Gravity.CENTER_HORIZONTAL
-            setPadding(dp(22),dp(28),dp(22),dp(28))
+    private fun showPage() = showSignUpPage()
+
+    private fun showSignUpPage() {
+        page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(22), dp(28), dp(22), dp(28))
             setBackgroundColor(black)
         }
-        setContentView(ScrollView(this).apply{
-            isFillViewport=true
-            addView(page, android.view.ViewGroup.LayoutParams(-1,-1))
+        setContentView(ScrollView(this).apply {
+            isFillViewport = true
+            addView(page, android.view.ViewGroup.LayoutParams(-1, -1))
         })
-
-        val head=LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL
-            gravity=Gravity.CENTER
-        }
-        head.addView(ImageView(this).apply{
-            setImageResource(R.mipmap.ic_launcher)
-            scaleType=ImageView.ScaleType.FIT_CENTER
-        },LinearLayout.LayoutParams(dp(76),dp(76)))
-        head.addView(txt("MS EDITOR MEDIA HUB",20f,Color.WHITE,true).apply{
-            gravity=Gravity.CENTER
-            setPadding(0,dp(10),0,0)
+        val head = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+        head.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher); scaleType = ImageView.ScaleType.FIT_CENTER },
+            LinearLayout.LayoutParams(dp(76), dp(76)))
+        head.addView(txt("MS EDITOR MEDIA HUB", 20f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER; setPadding(0, dp(10), 0, 0)
         })
-        add(head,dp(18))
-        add(txt("SIGN UP",21f,gold,true),dp(24))
-
-        val signupCard=LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL
-            setPadding(dp(16),dp(16),dp(16),dp(18))
-            background=bg(Color.rgb(8,24,22),gold)
+        add(head, dp(18))
+        add(txt("SIGN UP", 21f, gold, true), dp(24))
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(18))
+            background = bg(Color.rgb(8, 24, 22), gold)
         }
-        page.addView(signupCard,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(10)})
-        val oldPage=page
-        page=signupCard
-        val signupEmail=field("Email",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
-        val signupUsername=field("Username")
-        val signupPassword=field("Password",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
-        add(signupEmail,2);add(signupUsername,12);add(signupPassword,12)
-        add(btn("SIGN UP",true){
-            val email=signupEmail.text.toString().trim()
-            val username=signupUsername.text.toString().trim().removePrefix("@")
-            val password=signupPassword.text.toString()
-            if(email.isBlank()||!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()){
-                toast("Valid email address enter karein.");return@btn
+        page.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+        val oldPage = page
+        page = card
+        val firstName = field("First Name")
+        val lastName = field("Last Name")
+        val username = field("Username")
+        val email = field("Email", android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
+        val password = field("Password", android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        val confirm = field("Confirm Password", android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        add(firstName, 2); add(lastName, 10); add(username, 10); add(email, 10); add(password, 10); add(confirm, 10)
+        add(btn("SIGN UP", true) {
+            val first = firstName.text.toString().trim()
+            val last = lastName.text.toString().trim()
+            val user = username.text.toString().trim().removePrefix("@")
+            val mail = email.text.toString().trim()
+            val pass = password.text.toString()
+            val confirmPass = confirm.text.toString()
+            if (first.isBlank()) { firstName.error = "First Name zaroori hai"; return@btn }
+            if (last.isBlank()) { lastName.error = "Last Name zaroori hai"; return@btn }
+            if (!user.matches(Regex("[A-Za-z0-9_]{3,24}"))) { username.error = "Username 3 se 24 letters, numbers ya underscore"; return@btn }
+            if (mail.isBlank() || !android.util.Patterns.EMAIL_ADDRESS.matcher(mail).matches()) { email.error = "Valid email enter karein"; return@btn }
+            if (pass.length < 6) { password.error = "Password kam az kam 6 characters"; return@btn }
+            if (pass != confirmPass) { confirm.error = "Passwords match nahi karte"; return@btn }
+            val metadata = JSONObject().put("first_name", first).put("last_name", last)
+                .put("full_name", "$first $last").put("username", user)
+            val body = JSONObject().put("email", mail).put("password", pass).put("data", metadata)
+            authRequest("POST", "/auth/v1/signup", body) { json ->
+                val access = json.optString("access_token")
+                if (access.isBlank()) toast("Signup ho gaya. Email confirmation required ho to pehle email verify karein.")
+                showLoginPage(mail)
             }
-            if(!username.matches(Regex("[A-Za-z0-9_]{3,24}"))){
-                toast("Username 3 se 24 letters, numbers ya underscore ka hona chahiye.");return@btn
-            }
-            if(password.length<6){toast("Password kam az kam 6 characters ka hona chahiye.");return@btn}
-            val body=JSONObject().put("email",email).put("password",password)
-                .put("data",JSONObject().put("username",username))
-            authRequest("POST","/auth/v1/signup",body){json->
-                val token=json.optString("access_token")
-                if(token.isNotBlank())saveSession(json)
-                else toast("Signup request bhej di. Email confirmation enabled ho to email verify karke Login karein.")
-            }
-        },16)
-        page=oldPage
+        }, 16)
+        page = oldPage
+        add(btn("Already have an account? LOGIN") { showLoginPage("") }, 14)
+    }
 
-        add(txt("LOGIN",21f,gold,true),24)
-        val loginCard=LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL
-            setPadding(dp(16),dp(16),dp(16),dp(18))
-            background=bg(Color.rgb(8,24,22),green)
+    private fun showLoginPage(prefillEmail: String) {
+        page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(22), dp(28), dp(22), dp(28))
+            setBackgroundColor(black)
         }
-        page.addView(loginCard,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(10)})
-        page=loginCard
-        val loginEmail=field("Email",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
-        val loginPassword=field("Password",android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
-        add(loginEmail,2);add(loginPassword,12)
-        add(btn("LOGIN",true){
-            val email=loginEmail.text.toString().trim()
-            val password=loginPassword.text.toString()
-            if(email.isBlank()||password.isBlank()){
-                toast("Email aur password enter karein.");return@btn
-            }
-            val body=JSONObject().put("email",email).put("password",password)
-            authRequest("POST","/auth/v1/token?grant_type=password",body){saveSession(it)}
-        },16)
-        page=oldPage
+        setContentView(ScrollView(this).apply {
+            isFillViewport = true
+            addView(page, android.view.ViewGroup.LayoutParams(-1, -1))
+        })
+        val head = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+        head.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher); scaleType = ImageView.ScaleType.FIT_CENTER },
+            LinearLayout.LayoutParams(dp(76), dp(76)))
+        head.addView(txt("MS EDITOR MEDIA HUB", 20f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER; setPadding(0, dp(10), 0, 0)
+        })
+        add(head, dp(18))
+        add(txt("LOGIN", 21f, gold, true), dp(24))
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(18))
+            background = bg(Color.rgb(8, 24, 22), green)
+        }
+        page.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+        val oldPage = page
+        page = card
+        val email = field("Email", android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS).apply { setText(prefillEmail) }
+        val password = field("Password", android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        add(email, 2); add(password, 12)
+        add(btn("LOGIN", true) {
+            val mail = email.text.toString().trim()
+            val pass = password.text.toString()
+            if (mail.isBlank() || pass.isBlank()) { toast("Email aur password enter karein."); return@btn }
+            authRequest("POST", "/auth/v1/token?grant_type=password",
+                JSONObject().put("email", mail).put("password", pass)) { saveSession(it) }
+        }, 16)
+        page = oldPage
+        add(btn("New user? SIGN UP") { showSignUpPage() }, 14)
     }
 
     private fun authRequest(http:String,path:String,body:JSONObject,done:(JSONObject)->Unit){

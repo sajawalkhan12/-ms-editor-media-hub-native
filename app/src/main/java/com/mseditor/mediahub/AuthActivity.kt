@@ -14,6 +14,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.Executors
+import com.google.firebase.messaging.FirebaseMessaging
 
 class AuthActivity : Activity() {
     private val black = Color.rgb(5,10,13)
@@ -482,6 +483,12 @@ class AuthActivity : Activity() {
             SupabaseClient.addLoginNotification(token, userId) { result ->
                 result.onFailure { android.util.Log.w("MSMediaHubPush", "Login notification insert failed", it) }
             }
+            FirebaseMessaging.getInstance().token.addOnSuccessListener { fcmToken ->
+                PushTokenRegistrar.register(applicationContext, fcmToken)
+                SupabaseClient.sendLoginPush(token, fcmToken) { result ->
+                    result.onFailure { android.util.Log.i("MSMediaHubPush", "Login alert not sent to another device", it) }
+                }
+            }.addOnFailureListener { android.util.Log.w("MSMediaHubPush", "FCM token fetch failed after login", it) }
         }
         startActivity(Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK));finish()
     }

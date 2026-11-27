@@ -1249,9 +1249,21 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
         val handle = text("", 13f, Color.LTGRAY)
         val bio = text("", 13f, Color.LTGRAY)
         page.addView(name); page.addView(handle); page.addView(bio)
+        val profileActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         val follow = actionButton("Follow") { }
         follow.isEnabled = false
-        page.addView(follow, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(10) })
+        profileActions.addView(follow, LinearLayout.LayoutParams(0, dp(46), 1f))
+        val messageButton = actionButton("Message") {
+            val username = handle.text.toString().removePrefix("@").ifBlank { "user" }
+            openInboxChat(token, profileUserId, userId, username, "")
+        }
+        profileActions.addView(messageButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
+            leftMargin = dp(10)
+        })
+        page.addView(profileActions, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
         page.addView(text("POSTS", 16f, gold, true).apply { setPadding(0, dp(16), 0, dp(8)) })
         postsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         page.addView(postsContainer, LinearLayout.LayoutParams(-1, -2))
@@ -1266,6 +1278,7 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
                 loadProfileImage(avatar, profile.avatarPath)
                 var following = false
                 SupabaseClient.isFollowing(token, profileUserId, userId) { value ->
+                    if (isFinishing || isDestroyed) return@isFollowing
                     following = value
                     follow.text = if (value) "Following" else "Follow"
                     follow.isEnabled = true
@@ -1282,6 +1295,9 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
                         }
                         follow.isEnabled = true
                     }
+                }
+                messageButton.setOnClickListener {
+                    openInboxChat(token, profileUserId, userId, profile.username, profile.avatarPath)
                 }
             }.onFailure { error -> name.text = "Profile load nahi hui: ${error.message}" }
         }

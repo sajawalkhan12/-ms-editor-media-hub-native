@@ -565,6 +565,7 @@ class MainActivity : Activity() {
         section("ACCOUNT")
         item("🌐 MS Editor Media Hub") { openAdminWebsite("MS Editor Media Hub") }
         section("APP")
+        item("Change Language") { showLanguageSettings() }
         item("Back to Home") { showHome() }
         item("Exit App") { finish() }
         val scroll = ScrollView(this).apply { addView(menu) }
@@ -572,6 +573,87 @@ class MainActivity : Activity() {
             .setTitle("Navigation")
             .setView(scroll)
             .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showLanguageSettings() {
+        val languages = listOf(
+            "English" to "en",
+            "Urdu" to "ur",
+            "Hindi" to "hi",
+            "Arabic" to "ar",
+            "Bengali" to "bn",
+            "Persian (Farsi)" to "fa",
+            "Gujarati" to "gu",
+            "Marathi" to "mr",
+            "Tamil" to "ta",
+            "Telugu" to "te",
+            "Kannada" to "kn",
+            "Chinese (Simplified)" to "zh-CN",
+            "Japanese" to "ja",
+            "Korean" to "ko",
+            "Thai" to "th",
+            "Vietnamese" to "vi",
+            "Indonesian" to "id",
+            "Malay" to "ms",
+            "Filipino (Tagalog)" to "fil",
+            "Spanish" to "es",
+            "French" to "fr",
+            "Portuguese" to "pt",
+            "Italian" to "it",
+            "German" to "de",
+            "Dutch" to "nl",
+            "Danish" to "da",
+            "Swedish" to "sv",
+            "Norwegian" to "no",
+            "Finnish" to "fi",
+            "Icelandic" to "is",
+            "Polish" to "pl",
+            "Czech" to "cs",
+            "Slovak" to "sk",
+            "Hungarian" to "hu",
+            "Romanian" to "ro",
+            "Bulgarian" to "bg",
+            "Greek" to "el",
+            "Albanian" to "sq",
+            "Croatian" to "hr",
+            "Slovenian" to "sl",
+            "Macedonian" to "mk",
+            "Ukrainian" to "uk",
+            "Russian" to "ru",
+            "Belarusian" to "be",
+            "Lithuanian" to "lt",
+            "Latvian" to "lv",
+            "Estonian" to "et",
+            "Turkish" to "tr",
+            "Georgian" to "ka",
+            "Hebrew" to "he",
+            "Swahili" to "sw",
+            "Afrikaans" to "af",
+            "Haitian Creole" to "ht",
+            "Welsh" to "cy",
+            "Irish" to "ga",
+            "Catalan" to "ca",
+            "Galician" to "gl",
+            "Esperanto" to "eo"
+        )
+        val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
+        val currentCode = prefs.getString("language_code", "en").orEmpty()
+        val selected = languages.indexOfFirst { it.second.equals(currentCode, ignoreCase = true) }.coerceAtLeast(0)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Choose App Language")
+            .setSingleChoiceItems(languages.map { it.first }.toTypedArray(), selected) { dialog, which ->
+                val choice = languages[which]
+                prefs.edit()
+                    .putString("language_code", choice.second)
+                    .putString("language_name", choice.first)
+                    .apply()
+                AppTranslator.configure(this, choice.second)
+                dialog.dismiss()
+                Toast.makeText(this, "Language: ${choice.first}", Toast.LENGTH_SHORT).show()
+                showHome()
+            }
+            .setNegativeButton("Cancel", null)
             .show()
     }
 

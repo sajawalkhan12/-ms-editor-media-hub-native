@@ -666,7 +666,7 @@ object SupabaseClient {
         title: String,
         description: String,
         visibility: String = "public",
-        callback: (Result<Unit>) -> Unit
+        callback: (Result<String>) -> Unit
     ) {
         executor.execute {
             val result = runCatching {
@@ -733,14 +733,16 @@ object SupabaseClient {
                     insert.setRequestProperty("Authorization", "Bearer $token")
                     insert.setRequestProperty("Content-Type", "application/json")
                     insert.setRequestProperty("Content-Profile", "public")
-                    insert.setRequestProperty("Prefer", "return=minimal")
+                    insert.setRequestProperty("Prefer", "return=representation")
                     insert.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                     val code = insert.responseCode
                     val response = (if (code in 200..299) insert.inputStream else insert.errorStream)
                         ?.bufferedReader()?.use { it.readText() }.orEmpty()
                     if (code !in 200..299) throw Exception("Post record HTTP $code: $response")
+                    val rows = JSONArray(response)
+                    require(rows.length() > 0) { "Post save hui lekin ID nahi mili." }
+                    rows.getJSONObject(0).optString("id").also { require(it.isNotBlank()) }
                 } finally { insert.disconnect() }
-                Unit
             }
             mainHandler.post { callback(result) }
         }
@@ -753,7 +755,7 @@ object SupabaseClient {
         title: String,
         description: String,
         visibility: String,
-        callback: (Result<Unit>) -> Unit
+        callback: (Result<String>) -> Unit
     ) {
         executor.execute {
             val result = runCatching {
@@ -773,8 +775,10 @@ object SupabaseClient {
                     .put("created_by", userId)
                     .put("visibility", visibility)
                     .toString()
-                profileRequest(token, "POST", "media_items", body)
-                Unit
+                val response = profileRequest(token, "POST", "media_items", body, prefer = "return=representation")
+                val rows = JSONArray(response)
+                require(rows.length() > 0) { "Post save hui lekin ID nahi mili." }
+                rows.getJSONObject(0).optString("id").also { require(it.isNotBlank()) }
             }
             mainHandler.post { callback(result) }
         }
@@ -1249,6 +1253,41 @@ object SupabaseClient {
                     val code = connection.responseCode
                     val response = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
                     if (code !in 200..299) throw Exception("Push notification HTTP $code: $response")
+                    val payload = JSONObject(response)
+                    val sent = payload.optInt("sent", 0)
+                    if (sent <= 0) throw Exception(payload.optString("message").ifBlank { "Recipient ke phone par FCM token register nahi hai." })
+                    val errors = payload.optJSONArray("errors")
+                    if (errors != null && errors.length() > 0) throw Exception("Kuch device par push send nahi hua: ${errors.optString(0)}")
+                    Unit
+                } finally { connection.disconnect() }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun sendPostPush(token: String, postId: String, callback: (Result<Unit>) -> Unit) {
+        executor.execute {
+            val result = runCatching {
+                val endpoint = SupabaseConfig.SUPABASE_URL.trimEnd('/') + "/functions/v1/send-post-push"
+                val connection = URL(endpoint).openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 20000
+                    connection.readTimeout = 30000
+                    connection.doOutput = true
+                    connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    connection.setRequestProperty("Authorization", "Bearer $token")
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use { it.write(JSONObject().put("post_id", postId).toString().toByteArray(Charsets.UTF_8)) }
+                    val code = connection.responseCode
+                    val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Post push HTTP $code: $response")
+                    val payload = JSONObject(response)
+                    val sent = payload.optInt("sent", 0)
+                    if (sent <= 0) throw Exception(payload.optString("message").ifBlank { "Followers ke phone par notification token nahi hai." })
+                    val errors = payload.optJSONArray("errors")
+                    if (errors != null && errors.length() > 0) throw Exception("Kuch follower devices par push fail hua: ${errors.optString(0)}")
                     Unit
                 } finally { connection.disconnect() }
             }

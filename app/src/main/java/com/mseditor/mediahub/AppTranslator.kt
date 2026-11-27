@@ -14,6 +14,7 @@ import com.google.mlkit.nl.translate.TranslatorOptions
 object AppTranslator {
     private data class Pending(val source: String, val callback: (String) -> Unit)
     private val pending = mutableListOf<Pending>()
+    private val translatedCache = mutableMapOf<String, String>()
     private var translator: Translator? = null
     private var languageCode = "en"
     private var modelReady = false
@@ -35,6 +36,7 @@ object AppTranslator {
         loading = false
         languageCode = targetCode
         synchronized(pending) { pending.clear() }
+        synchronized(translatedCache) { translatedCache.clear() }
         if (targetCode == "en") return
 
         val target = TranslateLanguage.fromLanguageTag(targetCode) ?: return
@@ -46,7 +48,7 @@ object AppTranslator {
         translator = client
         loading = true
         // Translation is free; the language model download uses device data.
-        client.downloadModelIfNeeded(DownloadConditions.Builder().requireWifi().build())
+        client.downloadModelIfNeeded(DownloadConditions.Builder().build())
             .addOnSuccessListener {
                 if (translator !== client) return@addOnSuccessListener
                 modelReady = true
@@ -68,12 +70,17 @@ object AppTranslator {
             callback(source)
             return
         }
+        val cached = synchronized(translatedCache) { translatedCache[source] }
+        if (cached != null) {
+            callback(cached)
+            return
+        }
         val client = translator
         if (client != null && modelReady) {
             translateNow(client, source, callback)
         } else if (loading) {
             synchronized(pending) {
-                if (pending.size < 500) pending.add(Pending(source, callback)) else callback(source)
+                if (pending.size < 2000) pending.add(Pending(source, callback)) else callback(source)
             }
         } else {
             callback(source)
@@ -82,7 +89,10 @@ object AppTranslator {
 
     private fun translateNow(client: Translator, source: String, callback: (String) -> Unit) {
         client.translate(source)
-            .addOnSuccessListener { callback(it) }
+            .addOnSuccessListener {
+                if (translator === client) synchronized(translatedCache) { translatedCache[source] = it }
+                callback(it)
+            }
             .addOnFailureListener { callback(source) }
     }
 }

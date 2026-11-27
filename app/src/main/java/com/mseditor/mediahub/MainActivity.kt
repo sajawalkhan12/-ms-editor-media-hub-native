@@ -3040,8 +3040,8 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
                     input.text.clear()
                     loadMessages()
                     SupabaseClient.sendMessagePush(token, messageId) { pushResult ->
-                        pushResult.onFailure {
-                            Toast.makeText(this, "Message send ho gaya. Phone push ke liye Firebase service-account secret setup baqi hai.", Toast.LENGTH_LONG).show()
+                        pushResult.onFailure { error ->
+                            Toast.makeText(this, "Message send ho gaya, lekin phone notification nahi bheji: ${error.message}", Toast.LENGTH_LONG).show()
                         }
                     }
                 }.onFailure { Toast.makeText(this, "Message send nahi hua: ${it.message}", Toast.LENGTH_LONG).show() }

@@ -476,7 +476,13 @@ class AuthActivity : Activity() {
     private fun saveSession(json:JSONObject){
         val token=json.optString("access_token");val user=json.optJSONObject("user")?:JSONObject()
         if(token.isBlank()){toast("Supabase ne session nahi diya. Email/SMS verification ya provider settings check karein.");return}
-        getSharedPreferences("auth_session",MODE_PRIVATE).edit().putString("access_token",token).putString("refresh_token",json.optString("refresh_token")).putString("user_id",user.optString("id")).putString("login_method",method).apply()
+        val userId = user.optString("id")
+        getSharedPreferences("auth_session",MODE_PRIVATE).edit().putString("access_token",token).putString("refresh_token",json.optString("refresh_token")).putString("user_id",userId).putString("login_method",method).apply()
+        if (userId.isNotBlank()) {
+            SupabaseClient.addLoginNotification(token, userId) { result ->
+                result.onFailure { android.util.Log.w("MSMediaHubPush", "Login notification insert failed", it) }
+            }
+        }
         startActivity(Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK));finish()
     }
     private fun toast(s:String)=Toast.makeText(this,s,Toast.LENGTH_LONG).show()

@@ -1332,7 +1332,13 @@ object SupabaseClient {
             val result = runCatching {
                 val uid = URLEncoder.encode(userId, "UTF-8")
                 val rows = JSONArray(profileRequest(token, "GET", "notifications?select=id,actor_id,notification_type,title,body,related_id,created_at,read_at&user_id=eq.$uid&order=created_at.desc&limit=300"))
-                val actorIds = (0 until rows.length()).map { rows.getJSONObject(it).optString("actor_id") }.filter { it.isNotBlank() }.distinct()
+                // Notification rows may contain a literal "null" actor_id from older records.
+                // Only query profiles with valid UUID actor IDs; invalid values cause Postgres 22P02.
+                val uuidPattern = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")
+                val actorIds = (0 until rows.length())
+                    .map { rows.getJSONObject(it).optString("actor_id").trim() }
+                    .filter { uuidPattern.matches(it) }
+                    .distinct()
                 val profiles = if (actorIds.isEmpty()) JSONArray() else JSONArray(profileRequest(token, "GET", "profiles?select=id,username,avatar_path&id=in.(${actorIds.joinToString(",")})"))
                 val profileMap = mutableMapOf<String, Pair<String, String>>()
                 for (i in 0 until profiles.length()) {

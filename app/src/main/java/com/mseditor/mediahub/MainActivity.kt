@@ -621,7 +621,7 @@ class MainActivity : Activity() {
         item("Change Language", "App ki display language") { showLanguageSettings() }
         item("Privacy Policy", "App data aur privacy information") { showPolicyPage() }
         item("About MS Editor Media Hub", "App version aur information") { showAboutPage() }
-        item("Back to Home", "Home screen par wapas jayein") { showHome() }
+        item("Website", "MS Editor Media Hub website open karein") { openAdminWebsite("Website") }
 
         val scroll = ScrollView(this).apply {
             isFillViewport = true

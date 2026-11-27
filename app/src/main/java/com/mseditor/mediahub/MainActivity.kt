@@ -3073,7 +3073,18 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
         }
         val notificationHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         notificationHeader.addView(actionButton("‹ Back") { showHome() }, LinearLayout.LayoutParams(dp(88), dp(44)))
-        notificationHeader.addView(text("Notifications", 24f, emerald, true).apply { setPadding(dp(8), 0, 0, 0) })
+        notificationHeader.addView(text("Notifications", 24f, emerald, true).apply { setPadding(dp(8), 0, 0, 0) },
+            LinearLayout.LayoutParams(0, -2, 1f))
+        val notificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val messageChannelOff = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+            notificationManager.getNotificationChannel("ms_editor_direct_messages")?.importance == android.app.NotificationManager.IMPORTANCE_NONE
+        if (!androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled() || messageChannelOff) {
+            notificationHeader.addView(actionButton("Enable phone alerts") {
+                startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                })
+            }, LinearLayout.LayoutParams(dp(138), dp(42)))
+        }
         page.addView(notificationHeader, LinearLayout.LayoutParams(-1, dp(48)))
         val filter = Spinner(this)
         filter.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("All notifications", "Post", "Message", "Login"))

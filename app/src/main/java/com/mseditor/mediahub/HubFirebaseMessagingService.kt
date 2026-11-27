@@ -23,18 +23,18 @@ class HubFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
         val type = data["type"].orEmpty()
-        if (type != "message" && type != "post") return
+        if (type != "message" && type != "post" && type != "login") return
 
         val username = data["sender_username"].orEmpty().ifBlank { "user" }
         val senderId = data["sender_id"].orEmpty()
         val avatarUrl = data["sender_avatar_url"].orEmpty()
         val messageId = data["message_id"].orEmpty()
         val postId = data["post_id"].orEmpty()
-        val notificationKey = (messageId.ifBlank { postId }).hashCode().let {
+        val notificationKey = (messageId.ifBlank { postId.ifBlank { senderId } }).hashCode().let {
             if (it == 0) System.currentTimeMillis().toInt() else it
         }
         val body = data["body"].orEmpty().ifBlank {
-            if (type == "post") "@$username ne nayi post share ki hai." else "Aapko naya message mila hai."
+            when (type) { "post" -> "@$username ne nayi post share ki hai."; "login" -> "Aapke account mein ek naye device se login hua."; else -> "Aapko naya message mila hai." }
         }
         val recipientId = data["recipient_id"].orEmpty()
 
@@ -58,7 +58,7 @@ class HubFirebaseMessagingService : FirebaseMessagingService() {
             openTarget,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notificationTitle = if (type == "post") "New post from @$username" else "@$username"
+        val notificationTitle = when (type) { "post" -> "New post from @$username"; "login" -> "New login alert"; else -> "@$username" }
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_message)
             .setContentTitle(notificationTitle)

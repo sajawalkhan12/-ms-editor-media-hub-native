@@ -1873,7 +1873,7 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
                 )
             )
 
-            card.addView(text("Type: ${item.mediaType}", 12f, emerald))
+            card.addView(text(if (isMemberPost) "Category: Home" else "Type: ${item.mediaType}", 12f, emerald))
 
             val isPrivateStoredMedia = item.visibility == "private" && item.storagePath.startsWith("private-user-posts/")
             val url = if (isPrivateStoredMedia) "" else mediaUrl(item.externalUrl.ifBlank { item.storagePath })
@@ -2654,104 +2654,122 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
     }
 
     private fun showComments(item: MediaItem, stats: TextView) {
-        val layout = LinearLayout(this).apply {
+        val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
+        val token = prefs.getString("access_token", "").orEmpty()
+        val userId = prefs.getString("user_id", "").orEmpty()
+        val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(12), dp(18), dp(8))
-            setBackgroundColor(panel)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setBackgroundColor(black)
         }
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val name = EditText(this).apply {
-            hint = "Aapka naam (optional)"
-            setTextColor(white)
-            setHintTextColor(Color.LTGRAY)
-            setSingleLine(true)
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        header.addView(actionButton("‹ Back") { showHome() }, LinearLayout.LayoutParams(dp(82), dp(44)))
+        header.addView(text("Comments", 22f, emerald, true).apply { setPadding(dp(8), 0, 0, 0) })
+        page.addView(header, LinearLayout.LayoutParams(-1, dp(48)))
+
+        val postCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = rounded(panel, gold)
         }
-        val message = EditText(this).apply {
-            hint = "Comment likhein"
-            setTextColor(white)
-            setHintTextColor(Color.LTGRAY)
-            minLines = 2
+        val ownerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val ownerAvatar = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(black); setStroke(dp(1), emerald) }
+            clipToOutline = true
         }
-        layout.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, dp(220)))
-        layout.addView(name)
-        layout.addView(message)
-        val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle("Comments · ${item.title}")
-            .setView(layout)
-            .setNegativeButton("Close", null)
-            .setPositiveButton("Post", null)
-            .create()
+        ownerRow.addView(ownerAvatar, LinearLayout.LayoutParams(dp(42), dp(42)))
+        if (item.profileAvatarPath.isNotBlank()) loadProfileImage(ownerAvatar, item.profileAvatarPath)
+        else ownerAvatar.setImageResource(android.R.drawable.ic_menu_myplaces)
+        val ownerUsername = item.profileUsername.trim().removePrefix("@").ifBlank { "user" }
+        ownerRow.addView(text("@$ownerUsername", 14f, white, true).apply { setPadding(dp(10), 0, 0, 0) },
+            LinearLayout.LayoutParams(0, -2, 1f))
+        postCard.addView(ownerRow)
+        postCard.addView(text(item.title.ifBlank { "Post" }, 17f, gold, true).apply { setPadding(0, dp(8), 0, dp(4)) })
+        if (item.description.isNotBlank()) addExpandableDescription(postCard, item.description, 0, 0)
+        page.addView(postCard, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+
+        val commentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val commentScroll = ScrollView(this).apply { addView(commentList) }
+        page.addView(commentScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        val commentField = EditText(this).apply {
+            hint = "Comment likhein..."
+            setTextColor(white); setHintTextColor(Color.LTGRAY)
+            minLines = 2; maxLines = 4
+            background = rounded(panel, emerald)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        page.addView(commentField, LinearLayout.LayoutParams(-1, dp(70)).apply { topMargin = dp(8) })
+        val postComment = actionButton("Post Comment") { }
+        page.addView(postComment, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+        setContentView(page)
 
         fun refreshComments() {
             SupabaseClient.getEngagement(item.id, visitorId()) { result ->
+                if (isFinishing || isDestroyed) return@getEngagement
                 result.onSuccess { data ->
-                    list.removeAllViews()
+                    commentList.removeAllViews()
                     if (data.comments.isEmpty()) {
-                        list.addView(text("Abhi koi comment nahi.", 14f, Color.LTGRAY))
+                        commentList.addView(text("Abhi koi comment nahi. Pehla comment karein!", 14f, Color.LTGRAY)
+                            .apply { setPadding(dp(8), dp(12), dp(8), dp(12)) })
                     } else {
                         data.comments.forEach { comment ->
                             val row = LinearLayout(this).apply {
-                                orientation = LinearLayout.VERTICAL
-                                setPadding(dp(8), dp(8), dp(8), dp(8))
-                                background = rounded(black)
+                                orientation = LinearLayout.HORIZONTAL
+                                gravity = Gravity.CENTER_VERTICAL
+                                setPadding(dp(9), dp(9), dp(9), dp(9))
+                                background = rounded(panel)
                             }
-                            row.addView(text("${comment.name}: ${comment.text}", 14f, white))
-                            if (adminSession != null) {
-                                val delete = actionButton("🗑 Delete Comment") {
-                                    val session = adminSession
-                                    if (session == null) {
-                                        Toast.makeText(this, "Admin dobara login karein.", Toast.LENGTH_LONG).show()
-                                    } else {
-                                        android.app.AlertDialog.Builder(this)
-                                            .setTitle("Delete comment?")
-                                            .setMessage("Kya aap is comment ko delete karna chahte hain?")                                            .setNegativeButton("Cancel", null)
-                                            .setPositiveButton("Delete") { _, _ ->
-                                                SupabaseClient.deleteComment(session, comment.id) { deleted ->
-                                                    deleted.onSuccess {
-                                                        Toast.makeText(this, "Comment delete ho gaya.", Toast.LENGTH_SHORT).show()
-                                                        refreshComments()
-                                                    }.onFailure {
-                                                        Toast.makeText(this, "Comment delete nahi hua: ${it.message}", Toast.LENGTH_LONG).show()
-                                                    }
-                                                }
-                                            }.show()
-                                    }
-                                }
-                                row.addView(delete)
+                            val avatar = ImageView(this).apply {
+                                scaleType = ImageView.ScaleType.CENTER_CROP
+                                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(black); setStroke(dp(1), emerald) }
+                                clipToOutline = true
                             }
-                            val params = LinearLayout.LayoutParams(-1, -2)
-                            params.setMargins(0, 0, 0, dp(7))
-                            list.addView(row, params)
+                            row.addView(avatar, LinearLayout.LayoutParams(dp(38), dp(38)))
+                            if (comment.avatarPath.isNotBlank()) loadProfileImage(avatar, comment.avatarPath)
+                            else avatar.setImageResource(android.R.drawable.ic_menu_myplaces)
+                            val details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(9), 0, 0, 0) }
+                            details.addView(text("@"+comment.name.trim().removePrefix("@"), 13f, emerald, true))
+                            details.addView(text(comment.text, 14f, white))
+                            row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+                            commentList.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(7) })
                         }
                     }
                     stats.text = "${if (data.likedByMe) "♥ Liked" else "♥ Like"} · ${data.likes} likes     💬 ${data.comments.size} comments"
-                }.onFailure {
-                    list.removeAllViews()
-                    list.addView(text("Comments load nahi huay: ${it.message}", 13f, Color.RED))
+                }.onFailure { error ->
+                    commentList.removeAllViews()
+                    commentList.addView(text("Comments load nahi huay: ${error.message}", 13f, Color.RED))
                 }
             }
         }
-
-        dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val comment = message.text.toString().trim()
-                if (comment.isBlank()) {
-                    message.error = "Comment likhein"
-                    return@setOnClickListener
-                }
-                val visitorName = name.text.toString().trim().ifBlank { "Visitor" }.take(60)
-                SupabaseClient.addComment(item.id, visitorName, comment) { result ->
-                    result.onSuccess {
-                        message.text.clear()
-                        refreshComments()
-                        Toast.makeText(this, "Comment post ho gaya.", Toast.LENGTH_SHORT).show()
-                    }.onFailure {
-                        Toast.makeText(this, "Comment post nahi hua: ${it.message}", Toast.LENGTH_LONG).show()
+        postComment.setOnClickListener {
+            val commentText = commentField.text.toString().trim()
+            if (commentText.isBlank()) { commentField.error = "Comment likhein"; return@setOnClickListener }
+            if (token.isBlank() || userId.isBlank()) {
+                Toast.makeText(this, "Comment karne ke liye pehle Login karein.", Toast.LENGTH_LONG).show()
+                startActivity(Intent(this, AuthActivity::class.java))
+                return@setOnClickListener
+            }
+            postComment.isEnabled = false
+            SupabaseClient.getUserProfile(token, userId) { profileResult ->
+                profileResult.onSuccess { profile ->
+                    val username = profile.username.trim().removePrefix("@").ifBlank { "user" }
+                    SupabaseClient.addComment(item.id, username, commentText) { saved ->
+                        postComment.isEnabled = true
+                        saved.onSuccess {
+                            commentField.text.clear()
+                            refreshComments()
+                            Toast.makeText(this, "Comment post ho gaya.", Toast.LENGTH_SHORT).show()
+                        }.onFailure { error ->
+                            Toast.makeText(this, "Comment post nahi hua: ${error.message}", Toast.LENGTH_LONG).show()
+                        }
                     }
+                }.onFailure { error ->
+                    postComment.isEnabled = true
+                    Toast.makeText(this, "Profile load nahi hui: ${error.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
-        dialog.show()
         refreshComments()
     }
 

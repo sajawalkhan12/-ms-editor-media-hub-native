@@ -99,8 +99,17 @@ class MainActivity : Activity() {
         val language = getSharedPreferences("app_settings", MODE_PRIVATE).getString("language_code", "en").orEmpty()
         AppTranslator.configure(this, language)
         requestPushNotificationPermission()
-        FirebaseMessaging.getInstance().token.addOnSuccessListener { PushTokenRegistrar.register(this, it) }
+        registerPushTokenForLoggedInUser()
         showSplashScreen()
+    }
+
+    private fun registerPushTokenForLoggedInUser() {
+        val prefs = getSharedPreferences("auth_session", MODE_PRIVATE)
+        if (prefs.getString("access_token", "").isNullOrBlank() ||
+            prefs.getString("user_id", "").isNullOrBlank()) return
+        FirebaseMessaging.getInstance().token
+            .addOnSuccessListener { PushTokenRegistrar.register(applicationContext, it) }
+            .addOnFailureListener { android.util.Log.w("MSMediaHubPush", "FCM token fetch failed", it) }
     }
 
     private fun requestPushNotificationPermission() {
@@ -111,6 +120,10 @@ class MainActivity : Activity() {
     }
 
     private fun openChatFromNotification(source: Intent?) {
+        if (source?.action == "com.mseditor.mediahub.OPEN_NOTIFICATION_PAGE") {
+            showNotificationsPage()
+            return
+        }
         if (source?.action != "com.mseditor.mediahub.OPEN_MESSAGE_CHAT") return
         val otherId = source.getStringExtra("open_chat_user_id").orEmpty()
         val username = source.getStringExtra("open_chat_username").orEmpty()
@@ -973,12 +986,19 @@ class MainActivity : Activity() {
                 return@addBoxButton
             }
             status.text = "Post save ho rahi hai..."
-            val done: (Result<Unit>) -> Unit = { result ->
+            val done: (Result<String>) -> Unit = { result ->
                 if (!isFinishing && !isDestroyed) {
-                    result.onSuccess {
+                    result.onSuccess { postId ->
                         Toast.makeText(this, "Post save ho gayi.", Toast.LENGTH_LONG).show()
                         selectedUserPostUri = null
                         showProfilePage()
+                        if (selectedVisibility == "public") {
+                            SupabaseClient.sendPostPush(token, postId) { pushResult ->
+                                pushResult.onFailure { error ->
+                                    Toast.makeText(this, "Post save ho gayi, lekin phone push nahi bheja: ${error.message}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
                     }.onFailure { error ->
                         status.text = "Post save nahi hui: ${error.message}"
                         Toast.makeText(this, "Post save nahi hui: ${error.message}", Toast.LENGTH_LONG).show()
@@ -3108,6 +3128,7 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
         super.onResume()
         val language = getSharedPreferences("app_settings", MODE_PRIVATE).getString("language_code", "en").orEmpty()
         AppTranslator.configure(this, language)
+        registerPushTokenForLoggedInUser()
     }
 
     override fun onDestroy() {

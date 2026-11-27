@@ -640,8 +640,35 @@ class MainActivity : Activity() {
     }
 
     private fun showPolicyPage() {
-        showInfoPage("Privacy Policy",
-            "MS Editor Media Hub — Privacy & Data Summary\\n\\nAccount and profile: The app uses account information such as email, username and profile details to provide sign-in and user profiles.\\n\\nUser content: Posts, uploaded media, comments, likes, follows and messages are processed to provide the app's social and media features.\\n\\nStorage and services: App account and content data are handled through the connected Supabase project. Push notifications use Firebase Cloud Messaging and registered device tokens.\\n\\nNotifications: You can disable app notifications from your Android phone's Settings.\\n\\nSafety: Do not share passwords or sensitive personal information in public posts or messages.\\n\\nThis is a concise in-app privacy summary. The exact previously approved/published policy text or its official URL was not found in the available project files; it should be inserted here once supplied so this screen matches the approved policy.")
+        val policyUrl = "https://sajawalkhan12.github.io/ms-editor-media-hub-/privacy-policy.html"
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(black)
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            setBackgroundColor(panel)
+        }
+        header.addView(actionButton("← Back") { showNavigationMenu() }, LinearLayout.LayoutParams(dp(92), dp(44)))
+        header.addView(text("Privacy Policy", 19f, emerald, true).apply {
+            setPadding(dp(12), 0, 0, 0)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        page.addView(header, LinearLayout.LayoutParams(-1, -2))
+
+        val policyWebView = WebView(this).apply {
+            settings.javaScriptEnabled = false
+            settings.domStorageEnabled = false
+            settings.loadsImagesAutomatically = true
+            webViewClient = WebViewClient()
+            loadUrl(policyUrl)
+        }
+        page.addView(policyWebView, LinearLayout.LayoutParams(-1, 0, 1f))
+        page.addView(actionButton("Back to Home") { showHome() }, LinearLayout.LayoutParams(-1, dp(52)).apply {
+            setMargins(dp(16), dp(8), dp(16), dp(16))
+        })
+        setContentView(page)
     }
 
     private fun showInfoPage(title: String, body: String) {

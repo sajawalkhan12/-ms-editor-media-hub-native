@@ -1295,6 +1295,38 @@ object SupabaseClient {
         }
     }
 
+    fun sendLoginPush(token: String, currentFcmToken: String, callback: (Result<Unit>) -> Unit = {}) {
+        executor.execute {
+            val result = runCatching {
+                val endpoint = SupabaseConfig.SUPABASE_URL.trimEnd('/') + "/functions/v1/send-login-push"
+                val connection = URL(endpoint).openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 20000
+                    connection.readTimeout = 30000
+                    connection.doOutput = true
+                    connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_KEY.trim())
+                    connection.setRequestProperty("Authorization", "Bearer $token")
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use {
+                        it.write(JSONObject().put("current_fcm_token", currentFcmToken).toString().toByteArray(Charsets.UTF_8))
+                    }
+                    val code = connection.responseCode
+                    val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw Exception("Login push HTTP $code: $response")
+                    val payload = JSONObject(response)
+                    val sent = payload.optInt("sent", 0)
+                    if (sent <= 0) throw Exception(payload.optString("message").ifBlank { "Is account ka koi doosra registered phone nahi hai." })
+                    val errors = payload.optJSONArray("errors")
+                    if (errors != null && errors.length() > 0) throw Exception("Kuch devices par login alert fail hua: ${errors.optString(0)}")
+                    Unit
+                } finally { connection.disconnect() }
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
     fun getInboxNotifications(token: String, userId: String, callback: (Result<List<UserNotification>>) -> Unit) {
         executor.execute {
             val result = runCatching {

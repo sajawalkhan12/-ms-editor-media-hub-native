@@ -179,7 +179,7 @@ object SupabaseClient {
     }
 
 
-    data class MediaComment(val id: String, val name: String, val text: String)
+    data class MediaComment(val id: String, val name: String, val text: String, val avatarPath: String = "")
     data class EngagementSummary(val likes: Int, val likedByMe: Boolean, val comments: List<MediaComment>)
 
     private fun restRequest(method: String, path: String, body: String? = null): String {
@@ -227,7 +227,21 @@ object SupabaseClient {
                     val row = commentsArray.getJSONObject(i)
                     comments.add(MediaComment(row.optString("id", ""), row.optString("visitor_name", "Visitor"), row.optString("comment_text", "")))
                 }
-                EngagementSummary(likes.length(), liked, comments)
+                val usernames = comments.map { it.name.trim().removePrefix("@") }
+                    .filter { it.matches(Regex("[A-Za-z0-9_.]{3,30}")) }.distinct()
+                val avatarMap = mutableMapOf<String, String>()
+                if (usernames.isNotEmpty()) {
+                    val filter = usernames.joinToString(",") { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+                    val profiles = JSONArray(restRequest("GET", "profiles?select=username,avatar_path&username=in.($filter)"))
+                    for (i in 0 until profiles.length()) {
+                        val profile = profiles.getJSONObject(i)
+                        avatarMap[profile.optString("username")] = profile.optString("avatar_path")
+                    }
+                }
+                val enrichedComments = comments.map { comment ->
+                    comment.copy(avatarPath = avatarMap[comment.name.trim().removePrefix("@")].orEmpty())
+                }
+                EngagementSummary(likes.length(), liked, enrichedComments)
             }
             mainHandler.post { callback(result) }
         }

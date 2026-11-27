@@ -590,7 +590,7 @@ class MainActivity : Activity() {
                 setOnClickListener { action() }
             }
             card.addView(text(label, 16f, white, true))
-            if (subtitle.isNotBlank()) card.addView(text(subtitle, 12f, gray, false).apply {
+            if (subtitle.isNotBlank()) card.addView(text(subtitle, 12f, Color.LTGRAY, false).apply {
                 setPadding(0, dp(4), 0, 0)
             })
             content.addView(card, LinearLayout.LayoutParams(-1, -2).apply {

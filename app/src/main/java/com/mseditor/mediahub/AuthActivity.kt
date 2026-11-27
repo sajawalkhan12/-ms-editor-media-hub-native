@@ -53,6 +53,12 @@ class AuthActivity : Activity() {
         if(prefs.getString("language_code",null).isNullOrBlank()) showLanguagePage() else showPage()
     }
 
+    override fun onResume() {
+        super.onResume()
+        val language = getSharedPreferences("app_settings", MODE_PRIVATE).getString("language_code", "en").orEmpty()
+        AppTranslator.configure(this, language)
+    }
+
     private fun showLanguagePage(){
         page=LinearLayout(this).apply{
             orientation=LinearLayout.VERTICAL

@@ -632,8 +632,11 @@ class MainActivity : Activity() {
     }
 
     private fun showAboutPage() {
+        val packageInfo = packageManager.getPackageInfo(packageName, 0)
+        val versionName = packageInfo.versionName ?: "Unknown"
+        val versionCode = if (android.os.Build.VERSION.SDK_INT >= 28) packageInfo.longVersionCode else packageInfo.versionCode.toLong()
         showInfoPage("About MS Editor Media Hub",
-            "MS Editor Media Hub\\n\\nVersion: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\\n\\nPackage: ${packageName}\\n\\nThis app provides media browsing, user profiles, posts, comments, messaging and notification features.")
+            "MS Editor Media Hub\n\nVersion: $versionName ($versionCode)\n\nPackage: $packageName\n\nThis app provides media browsing, user profiles, posts, comments, messaging and notification features.")
     }
 
     private fun showPolicyPage() {

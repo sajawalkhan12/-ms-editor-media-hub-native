@@ -2043,6 +2043,9 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
             setBackgroundColor(Color.argb(125, 0, 0, 0))
             layoutParams = FrameLayout.LayoutParams(-1, -1)
         }
+        AppTranslator.translate("Tap to play video") { translated ->
+            if (playHint.text.toString() == "▶\nTap to play video") playHint.text = "▶\n$translated"
+        }
         frame.addView(playHint)
 
         if (thumbnailUrl.isNotBlank()) {
@@ -2969,6 +2972,12 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
         setContentView(page)
         load()
     }
+    override fun onResume() {
+        super.onResume()
+        val language = getSharedPreferences("app_settings", MODE_PRIVATE).getString("language_code", "en").orEmpty()
+        AppTranslator.configure(this, language)
+    }
+
     override fun onDestroy() {
         chatRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
         releaseMediaPlayers()

@@ -2685,7 +2685,10 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
             setPadding(dp(16), dp(14), dp(16), dp(12))
             setBackgroundColor(black)
         }
-        page.addView(text("Inbox", 24f, emerald, true))
+        val inboxHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        inboxHeader.addView(actionButton("‹ Back") { showHome() }, LinearLayout.LayoutParams(dp(88), dp(44)))
+        inboxHeader.addView(text("Inbox", 24f, emerald, true).apply { setPadding(dp(8), 0, 0, 0) })
+        page.addView(inboxHeader, LinearLayout.LayoutParams(-1, dp(48)))
         val searchRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val search = EditText(this).apply {
             hint = "Search username..."
@@ -2791,9 +2794,22 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
         }
         header.addView(avatar, LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(8) })
         if (avatarPath.isNotBlank()) loadProfileImage(avatar, avatarPath)
-        header.addView(text("@${username.removePrefix("@")}", 18f, white, true).apply {
+        val chatUsername = "@${username.removePrefix("@")}"
+        header.addView(text(chatUsername, 18f, white, true).apply {
             setPadding(dp(10), 0, 0, 0)
+            isClickable = true
+            setOnLongClickListener {
+                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Username", username.removePrefix("@")))
+                Toast.makeText(this@MainActivity, "Username copy ho gaya", Toast.LENGTH_SHORT).show()
+                true
+            }
         }, LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(actionButton("Copy") {
+            val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Username", username.removePrefix("@")))
+            Toast.makeText(this, "Username copy ho gaya", Toast.LENGTH_SHORT).show()
+        }, LinearLayout.LayoutParams(dp(68), dp(42)))
         page.addView(header, LinearLayout.LayoutParams(-1, dp(50)))
         val messages = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), dp(8), dp(2), dp(8)) }
         val scroll = ScrollView(this).apply { addView(messages); isFillViewport = true }
@@ -2900,7 +2916,10 @@ private fun showFollowUsersPage(token: String, userId: String, showFollowers: Bo
             setPadding(dp(16), dp(14), dp(16), dp(12))
             setBackgroundColor(black)
         }
-        page.addView(text("Notifications", 24f, emerald, true))
+        val notificationHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        notificationHeader.addView(actionButton("‹ Back") { showHome() }, LinearLayout.LayoutParams(dp(88), dp(44)))
+        notificationHeader.addView(text("Notifications", 24f, emerald, true).apply { setPadding(dp(8), 0, 0, 0) })
+        page.addView(notificationHeader, LinearLayout.LayoutParams(-1, dp(48)))
         val filter = Spinner(this)
         filter.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("All notifications", "Post", "Message", "Login"))
         page.addView(filter, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })

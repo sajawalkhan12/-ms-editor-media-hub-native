@@ -22,35 +22,46 @@ class HubFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
-        if (data["type"] != "message") return
+        val type = data["type"].orEmpty()
+        if (type != "message" && type != "post") return
 
         val username = data["sender_username"].orEmpty().ifBlank { "user" }
         val senderId = data["sender_id"].orEmpty()
         val avatarUrl = data["sender_avatar_url"].orEmpty()
         val messageId = data["message_id"].orEmpty()
-        val body = data["body"].orEmpty().ifBlank { "Aapko naya message mila hai." }
+        val postId = data["post_id"].orEmpty()
+        val notificationKey = (messageId.ifBlank { postId }).hashCode().let {
+            if (it == 0) System.currentTimeMillis().toInt() else it
+        }
+        val body = data["body"].orEmpty().ifBlank {
+            if (type == "post") "@$username ne nayi post share ki hai." else "Aapko naya message mila hai."
+        }
         val recipientId = data["recipient_id"].orEmpty()
 
         createNotificationChannel()
         val avatar = downloadAvatar(avatarUrl)
-        val openChat = Intent(this, MainActivity::class.java).apply {
-            action = "com.mseditor.mediahub.OPEN_MESSAGE_CHAT"
+        val openTarget = Intent(this, MainActivity::class.java).apply {
+            action = if (type == "message") "com.mseditor.mediahub.OPEN_MESSAGE_CHAT"
+                else "com.mseditor.mediahub.OPEN_NOTIFICATION_PAGE"
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("open_chat_user_id", senderId)
-            putExtra("open_chat_username", username)
-            putExtra("open_chat_avatar_url", avatarUrl)
-            putExtra("open_chat_recipient_id", recipientId)
-            putExtra("open_chat_message_id", messageId)
+            if (type == "message") {
+                putExtra("open_chat_user_id", senderId)
+                putExtra("open_chat_username", username)
+                putExtra("open_chat_avatar_url", avatarUrl)
+                putExtra("open_chat_recipient_id", recipientId)
+                putExtra("open_chat_message_id", messageId)
+            }
         }
         val pendingIntent = PendingIntent.getActivity(
             this,
-            messageId.hashCode(),
-            openChat,
+            notificationKey,
+            openTarget,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val notificationTitle = if (type == "post") "New post from @$username" else "@$username"
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_message)
-            .setContentTitle("@$username")
+            .setContentTitle(notificationTitle)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setLargeIcon(avatar)
@@ -60,7 +71,7 @@ class HubFirebaseMessagingService : FirebaseMessagingService() {
             .build()
 
         try {
-            NotificationManagerCompat.from(this).notify(messageId.hashCode(), notification)
+            NotificationManagerCompat.from(this).notify(notificationKey, notification)
         } catch (_: SecurityException) {
             // Android 13+ notification permission has not been granted.
         }
